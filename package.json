@@ -1,0 +1,21 @@
+{
+  "name": "sim-platform",
+  "version": "1.0.0",
+  "description": "AI simulation platform starter",
+  "main": "proxy-server.cjs",
+  "scripts": {
+    "start": "node proxy-server.cjs",
+    "client": "cd client && npm run dev",
+    "dev": "concurrently \"npm run start\" \"npm run client\""
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^4.21.2",
+    "http-proxy-middleware": "^3.0.5",
+    "react-router-dom": "^7.6.2"
+  },
+  "devDependencies": {
+    "concurrently": "^8.0.1"
+  }
+}
