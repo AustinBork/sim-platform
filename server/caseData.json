@@ -1,0 +1,97 @@
+{
+  "case": {
+    "title": "First 48: Homicide of Mia Rodriguez",
+    "type": "Homicide Investigation",
+    "genre": [
+      "Crime",
+      "Mystery",
+      "Realism"
+    ],
+    "timeLimitHours": 48,
+    "startTime": "07:50",
+    "modes": [
+      "Easy",
+      "Classic",
+      "Hard"
+    ]
+  },
+  "victim": {
+    "name": "Mia Rodriguez",
+    "age": 26,
+    "timeOfDeathWindow": "02:00–04:00",
+    "discoveryTime": "07:45",
+    "scene": {
+      "location": "Her Apartment",
+      "details": [
+        "Single stab wound to abdomen",
+        "No sign of forced entry",
+        "Apartment partially cleaned",
+        "Phone missing",
+        "Door locked from inside"
+      ]
+    }
+  },
+  "people": {
+    "navarro": {
+      "role": "AI Partner",
+      "description": "Veteran homicide detective—world-weary but fiercely loyal. Smokes a cigarette when thinking and teases you like an old friend."
+    },
+    "marvinLott": {
+      "role": "Neighbor",
+      "description": "Elderly and soft-spoken, still shaken by the scream he heard. Avoids eye contact when nervous."
+    },
+    "jordanValez": {
+      "role": "Ex-boyfriend",
+      "alibi": "At a bar with friends until ~12:05 AM (verified by Uber receipt)",
+      "notes": [
+        "History of jealousy",
+        "Restraining order previously filed but not enforced"
+      ]
+    },
+    "rachelKim": {
+      "role": "Best Friend",
+      "alibi": "Claimed she found the body at 8:00 AM; metadata shows she called Mia at 7:25 AM",
+      "notes": [
+        "Obsession motive",
+        "Timeline inconsistencies"
+      ]
+    }
+  },
+  "redHerring": {
+    "suspect": "Jordan Valez",
+    "reason": "Emotional history and vague bar alibi",
+    "ultimateResult": "Cleared by timestamped Uber receipt"
+  },
+  "solved": {
+    "killer": "Rachel Kim",
+    "motive": "Secret obsession after Mia reconnected with Jordan",
+    "triggerTime": "02:45 AM",
+    "method": "Kitchen knife (gloved) with snapped bracelet charm left behind",
+    "exit": "Escaped via window left cracked open",
+    "mistakes": [
+      "Left metal charm under couch",
+      "Forgot to relock exit window",
+      "Timeline contradicted by phone metadata and doorbell footage"
+    ],
+    "evidence": [
+      "Bracelet charm under couch",
+      "Partial fingerprint smudge on knife",
+      "Doorbell footage at 3:48 AM",
+      "Phone call log at 7:25 AM"
+    ],
+    "arrest": "Rachel Kim arrested for second-degree murder"
+  },
+  "gameMechanics": {
+    "timeCosts": {
+      "interview": 20,
+      "forensics": 360,
+      "recordPull": 15
+    },
+    "objectives": [
+      "Follow correct leads",
+      "Avoid time-wasting on red herrings",
+      "Cross-reference alibis",
+      "Use social nuance to extract truth"
+    ]
+  }
+}
