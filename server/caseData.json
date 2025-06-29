@@ -15,6 +15,46 @@
       "Hard"
     ]
   },
+
+  "leadDefinitions": [
+    {
+      "id": "blood-analysis",
+      "description": "Send the bloodstain sample to the DNA lab for analysis.",
+      "triggers": {
+        "evidenceCollected": ["bloodstain"]
+      }
+    },
+    {
+      "id": "phone-records",
+      "description": "Obtain Marvin’s phone records from 2 AM to 4 AM.",
+      "triggers": {
+        "actionsPerformed": ["pull phone records"]
+      }
+    },
+    {
+      "id": "scene-photos",
+      "description": "Photograph the crime scene thoroughly.",
+      "triggers": {
+        "actionsPerformed": ["photograph room"]
+      }
+    },
+    {
+      "id": "interview-marvin",
+      "description": "Ask Marvin Lott detailed questions about what he heard.",
+      "triggers": {
+        "interviewsCompleted": ["Marvin Lott"]
+      }
+    },
+    {
+      "id": "red-herring-dog-walker",
+      "description": "Talk to the dog-walker who was passing by at 3:30 AM.",
+      "triggers": {
+        "actionsPerformed": ["approach neighbor"]
+      },
+      "isRedHerring": true
+    }
+  ],
+
   "victim": {
     "name": "Mia Rodriguez",
     "age": 26,
@@ -31,6 +71,7 @@
       ]
     }
   },
+
   "people": {
     "navarro": {
       "role": "AI Partner",
@@ -57,11 +98,13 @@
       ]
     }
   },
+
   "redHerring": {
     "suspect": "Jordan Valez",
     "reason": "Emotional history and vague bar alibi",
     "ultimateResult": "Cleared by timestamped Uber receipt"
   },
+
   "solved": {
     "killer": "Rachel Kim",
     "motive": "Secret obsession after Mia reconnected with Jordan",
@@ -81,6 +124,7 @@
     ],
     "arrest": "Rachel Kim arrested for second-degree murder"
   },
+
   "gameMechanics": {
     "timeCosts": {
       "interview": 20,
