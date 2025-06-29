@@ -1,4 +1,3 @@
-// client/src/App.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { leadDefinitions, applyAction, canAccuse, fmt } from './gameEngine';
 import caseData from '../../server/caseData.json';
@@ -34,6 +33,9 @@ export default function App() {
   const [leads, setLeads]                     = useState([]);
   const [interviewCounts, setInterviewCounts] = useState({});
   const [seenNpcInterviewed, setSeenNpcInterviewed] = useState({});
+  // new state for lead triggers
+  const [actionsPerformed, setActionsPerformed]     = useState([]);
+  const [interviewsCompleted, setInterviewsCompleted] = useState([]);
   const [showNotepad, setShowNotepad]         = useState(false);
   const [showAccuseModal, setShowAccuseModal] = useState(false);
   const [selectedSuspect, setSelectedSuspect] = useState('');
@@ -71,7 +73,20 @@ export default function App() {
 
   // —— SAVE / LOAD GAME ——
   const saveGame = () => {
-    const toSave = { detectiveName, mode, phase, msgs, timeElapsed, timeRemaining, evidence, leads, interviewCounts, seenNpcInterviewed };
+    const toSave = {
+      detectiveName,
+      mode,
+      phase,
+      msgs,
+      timeElapsed,
+      timeRemaining,
+      evidence,
+      leads,
+      interviewCounts,
+      seenNpcInterviewed,
+      actionsPerformed,
+      interviewsCompleted
+    };
     localStorage.setItem('first48_save', JSON.stringify(toSave));
     setHasSave(true);
     setSavedState(toSave);
@@ -88,6 +103,8 @@ export default function App() {
     setLeads(savedState.leads);
     setInterviewCounts(savedState.interviewCounts);
     setSeenNpcInterviewed(savedState.seenNpcInterviewed || {});
+    setActionsPerformed(savedState.actionsPerformed || []);
+    setInterviewsCompleted(savedState.interviewsCompleted || []);
   };
 
   // —— START NEW INVESTIGATION ——
@@ -105,84 +122,100 @@ Up to you where we start.”`;
     setLeads([]);
     setInterviewCounts({});
     setSeenNpcInterviewed({});
+    setActionsPerformed([]);
+    setInterviewsCompleted([]);
   };
 
-  // —— SEND ACTION / MESSAGE ——
-  const sendMessage = async () => {
-    const actionText = input.trim();
-    console.log('✅ App.sendMessage: about to call applyAction with:', actionText);
-    if (!actionText) return;
-    setInput('');
+// —— SEND ACTION / MESSAGE ——
+const sendMessage = async () => {
+  const actionText = input.trim();
+  console.log('✅ App.sendMessage: about to call applyAction with:', actionText);
+  if (!actionText) return;
+  setInput('');
 
-    // call gameEngine
-    const result = applyAction({ timeElapsed, timeRemaining, evidence, leads, interviewCounts, actionsPerformed: [], interviewsCompleted: [] }, actionText);
-    console.log('✅ App.sendMessage applyAction returned:', result);
-    if (result.error) {
-      setMsgs(m => [...m, { speaker: 'System', content: `❌ ${result.error}` }]);
-      return;
-    }
+  // call gameEngine with full state
+  const result = applyAction({
+    timeElapsed,
+    timeRemaining,
+    evidence,
+    leads,
+    interviewCounts,
+    actionsPerformed,
+    interviewsCompleted
+  }, actionText);
 
-    const { newState, cost, newLeads } = result;
-    setTimeElapsed(newState.timeElapsed);
-    setTimeRemaining(newState.timeRemaining);
-    setEvidence(newState.evidence);
-    setLeads(newState.leads);
-    setInterviewCounts(newState.interviewCounts);
+  if (result.error) {
+    setMsgs(m => [...m, { speaker: 'System', content: `❌ ${result.error}` }]);
+    return;
+  }
 
-    setMsgs(m => [...m, { speaker: detectiveName, content: actionText }]);
-    setLoading(true);
+  const { newState, cost, newLeads } = result;
+  console.log('🔍 [DEBUG] leads after applyAction:', newState.leads);
+  setTimeElapsed(newState.timeElapsed);
+  setTimeRemaining(newState.timeRemaining);
+  setEvidence(newState.evidence);
+  setLeads(newState.leads);
+  setInterviewCounts(newState.interviewCounts);
+  setActionsPerformed(newState.actionsPerformed);
+  setInterviewsCompleted(newState.interviewsCompleted);
 
-    // Announce any newly unlocked leads
-    if (newLeads.length) {
-      newLeads.forEach(def => {
-        setMsgs(m => [...m, { speaker: 'System', content: `🕵️ New lead unlocked: ${def.description}` }]);
-      });
-    }
+  setMsgs(m => [...m, { speaker: detectiveName, content: actionText }]);
+  setLoading(true);
 
-    // Send off to your proxy...
-    try {
-      const history = [...msgs, { speaker: detectiveName, content: actionText }].map(m => ({
-        role: m.speaker === 'System' ? 'system'
-             : m.speaker === detectiveName ? 'user'
-             : 'assistant',
-        content: m.content
-      }));
-      const res = await fetch('http://localhost:3001/chat', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({
-          messages: history,
-          gameState: {
-            currentTime: fmt(currentClock()),
-            timeRemaining: fmt(timeRemaining),
-            location: LOCATION,
-            mode,
-            evidence,
-            leads,
-          }
-        })
-      });
-      const { text } = await res.json();
-      const lines = text.trim().split(/\r?\n/);
-      const parsed = lines.map(l=>{ try{return JSON.parse(l)}catch{return null}}).filter(o=>o&&(['stage','dialogue'].includes(o.type)));
-      for (const obj of parsed) {
-        if (obj.type === 'stage') {
-          setMsgs(m => [...m, { speaker: 'System', content: `*${obj.description}*` }]);
-        } else {
-          setMsgs(m => [...m, { speaker: obj.speaker, content: obj.text }]);
-          if (obj.speaker !== 'Navarro' && !seenNpcInterviewed[obj.speaker]) {
-            setTimeElapsed(te => te + ACTION_COSTS.interview);
-            setTimeRemaining(tr => tr - ACTION_COSTS.interview);
-            setSeenNpcInterviewed(s => ({ ...s, [obj.speaker]: true }));
-          }
+  // —— PROXY CALL ——
+  try {
+    const history = [...msgs, { speaker: detectiveName, content: actionText }].map(m => ({
+      role: m.speaker === 'System' ? 'system'
+           : m.speaker === detectiveName ? 'user'
+           : 'assistant',
+      content: m.content
+    }));
+    const res = await fetch('http://localhost:3001/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: history,
+        gameState: {
+          currentTime: fmt(currentClock()),
+          timeRemaining: fmt(timeRemaining),
+          location: LOCATION,
+          mode,
+          evidence,
+          leads,
+        }
+      }),
+    });
+    const { text } = await res.json();
+
+    // —— DEBUG LOGS ——
+    const lines = text.trim().split(/\r?\n/);
+    const parsed = lines
+      .map(l => { try { return JSON.parse(l) } catch { return null } })
+      .filter(o => o && (o.type === 'stage' || o.type === 'dialogue'));
+
+    console.log('💬 RAW STREAM LINES:', lines);
+    console.log('💬 PARSED OBJECTS:', parsed);
+
+    for (const obj of parsed) {
+      console.log('🔸 obj:', obj);
+      if (obj.type === 'stage') {
+        setMsgs(m => [...m, { speaker: 'System', content: `*${obj.description}*` }]);
+      } else {
+        setMsgs(m => [...m, { speaker: obj.speaker, content: obj.text }]);
+        if (obj.speaker !== 'Navarro' && !seenNpcInterviewed[obj.speaker]) {
+          setTimeElapsed(te => te + ACTION_COSTS.interview);
+          setTimeRemaining(tr => tr - ACTION_COSTS.interview);
+          setSeenNpcInterviewed(s => ({ ...s, [obj.speaker]: true }));
         }
       }
-    } catch (err) {
-      setMsgs(m => [...m, { speaker: 'Navarro', content: `❌ ${err.message}` }]);
-    } finally {
-      setLoading(false);
     }
-  };
+  } catch (err) {
+    setMsgs(m => [...m, { speaker: 'Navarro', content: `❌ ${err.message}` }]);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   // —— ACCUSATION HANDLERS ——
   const handleAccuse = () => {
