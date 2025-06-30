@@ -4,30 +4,98 @@ console.log('✅ gameEngine.js loaded');
 // ——— Lead Definitions ———
 export const leadDefinitions = [
   {
+    id: 'scene-photos',
+    description: 'Photograph the crime scene thoroughly.',
+    narrative: 'The layout and positioning of items may reveal important clues about what happened.',
+    triggers: { actionsKeywords: ['photo', 'photograph', 'picture', 'snap', 'capture', 'pic'] }
+  },
+  {
     id: 'blood-analysis',
     description: 'Send the bloodstain sample to the DNA lab for analysis.',
+    narrative: 'The odd pattern of blood spatter on the wall doesn\'t match a simple stabbing. Could provide vital evidence.',
     triggers: { evidenceCollected: ['bloodstain'] }
   },
   {
     id: 'phone-records',
-    description: 'Obtain Marvin’s phone records from 2 AM to 4 AM.',
+    description: 'Obtain Marvin\'s phone records from 2 AM to 4 AM.',
+    narrative: 'His call to 911 came at 3:45 AM, but what was he doing before that? His timing seems convenient.',
     triggers: { actionsKeywords: ['phone record', 'call log', 'phone records'] }
   },
   {
-    id: 'scene-photos',
-    description: 'Photograph the crime scene thoroughly.',
-    triggers: { actionsKeywords: ['photo', 'photograph', 'picture', 'snap', 'capture', 'pic'] }
+    id: 'interview-marvin',
+    description: 'Interview Marvin Lott about what he heard that night.',
+    narrative: 'As the reporting witness, his testimony about the timing and what he heard will be crucial.',
+    triggers: { interviewsCompleted: ['Marvin Lott'] }
   },
   {
-    id: 'interview-marvin',
-    description: 'Ask Marvin Lott detailed questions about what he heard.',
-    triggers: { interviewsCompleted: ['Marvin Lott'] }
+    id: 'victim-background',
+    description: 'Research Mia Rodriguez\'s background and connections.',
+    narrative: 'Understanding her relationships and recent activities could point to suspects.',
+    triggers: { actionsKeywords: ['background', 'research mia', 'victim history', 'about mia'] }
+  },
+  {
+    id: 'knife-analysis',
+    description: 'Have the forensics team analyze the knife.',
+    narrative: 'The murder weapon is still in place. Fingerprints or DNA could identify our killer.',
+    triggers: { actionsKeywords: ['knife', 'murder weapon', 'analyze knife', 'weapon analysis'] }
+  },
+  {
+    id: 'neighbors-canvass',
+    description: 'Canvass other neighbors in the building.',
+    narrative: 'Someone else might have heard or seen something important that night.',
+    triggers: { actionsKeywords: ['canvass', 'other neighbors', 'ask neighbors', 'check neighbors'] }
+  },
+  {
+    id: 'apartment-security',
+    description: 'Check building security cameras and entry logs.',
+    narrative: 'With no forced entry, how did the killer get in? Security might show who entered the building.',
+    triggers: { actionsKeywords: ['security', 'cameras', 'camera footage', 'entry log', 'building security'] }
   },
   {
     id: 'red-herring-dog-walker',
     description: 'Talk to the dog-walker who was passing by at 3:30 AM.',
-    triggers: { actionsKeywords: ['dog-walker', 'neighbor', 'walked'] },
+    narrative: 'A resident mentioned seeing someone walking a dog outside around the time of the murder.',
+    triggers: { actionsKeywords: ['dog-walker', 'dog walker', 'walking dog'] },
     isRedHerring: true
+  }
+];
+
+// ——— Evidence Definitions ———
+export const evidenceDefinitions = [
+  {
+    id: "stab-wound",
+    description: "Single stab wound to victim's abdomen",
+    discoveredBy: ["photograph room", "examine body", "look at body"]
+  },
+  {
+    id: "no-forced-entry",
+    description: "No signs of forced entry on door or windows",
+    discoveredBy: ["examine door", "check windows", "photograph room"]
+  },
+  {
+    id: "partial-cleaning",
+    description: "Apartment appears partially cleaned",
+    discoveredBy: ["examine floor", "check bathroom", "photograph room"]
+  },
+  {
+    id: "missing-phone",
+    description: "Victim's phone is missing from the scene",
+    discoveredBy: ["check phone", "look for phone", "search belongings"]
+  },
+  {
+    id: "locked-door",
+    description: "Door was locked from inside",
+    discoveredBy: ["examine door", "check lock", "photograph room"]
+  },
+  {
+    id: "bloodstain",
+    description: "Unusual blood spatter pattern on wall",
+    discoveredBy: ["examine wall", "check blood", "photograph room"]
+  },
+  {
+    id: "bracelet-charm",
+    description: "Small metal charm found under the couch",
+    discoveredBy: ["check couch", "look under furniture", "thorough search"]
   }
 ];
 
@@ -87,6 +155,38 @@ export function canAccuse(gameState) {
     return { allowed: false, reason: `Must wait until 9 PM on day 1 (current time ${fmt(now)})` };
   }
   return { allowed: true };
+}
+
+// ——— Helper: discover evidence ———
+export function discoverEvidence(actionText, currentEvidence) {
+  const lowerAction = actionText.toLowerCase();
+  const newEvidence = [];
+  
+  // Check if action is a comprehensive room search
+  const isRoomSearch = 
+    lowerAction.includes("photograph room") || 
+    lowerAction.includes("take photos") || 
+    lowerAction.includes("photograph scene") || 
+    lowerAction.includes("document scene") ||
+    lowerAction.includes("take pictures");
+    
+  // Process each evidence definition
+  for (const evidence of evidenceDefinitions) {
+    // Skip if already discovered
+    if (currentEvidence.includes(evidence.id)) continue;
+    
+    // Check if action triggers this evidence
+    const isTriggered = evidence.discoveredBy.some(trigger => 
+      lowerAction.includes(trigger)
+    );
+    
+    // Discover evidence if triggered or if doing comprehensive room search
+    if (isTriggered || (isRoomSearch && evidence.discoveredBy.includes("photograph room"))) {
+      newEvidence.push(evidence.id);
+    }
+  }
+  
+  return newEvidence;
 }
 
 // ——— Lead Trigger Helper ———
@@ -150,8 +250,11 @@ export function applyAction(gameState = {}, actionText = '') {
     if (!newInterviews.includes(npc)) newInterviews.push(npc);
   }
 
-  // preserve evidence
-  const newEvidence = gameState.evidence || [];
+  // preserve evidence and discover new evidence
+  const prevEvidence = gameState.evidence || [];
+  const discoveredEvidence = discoverEvidence(actionText, prevEvidence);
+  const newEvidence = [...prevEvidence, ...discoveredEvidence];
+  
   const prevLeads = gameState.leads || [];
 
   // instrument state before triggers
@@ -187,5 +290,10 @@ export function applyAction(gameState = {}, actionText = '') {
     leads: mergedLeads
   };
 
-  return { newState, cost, newLeads: unlockedDefs };
+  return { 
+    newState, 
+    cost, 
+    newLeads: unlockedDefs,
+    discoveredEvidence
+  };
 }
