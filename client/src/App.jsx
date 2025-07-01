@@ -192,6 +192,23 @@ export default function App() {
 function detectCharacterMention(text, currentState) {
   const lowerText = text.toLowerCase();
   console.log('🔍 Detecting character in:', lowerText);
+
+  // Helper function to detect when the player is ending a conversation
+function isEndingConversation(text, currentState) {
+  const lowerText = text.toLowerCase();
+  const goodbyePhrases = [
+    'goodbye', 'bye', 'see you', 'thanks', 'thank you',
+    'that will be all', 'that is all', 'that\'s all',
+    'if we need', 'we will find you', 'find you later',
+    'contact you', 'that helps', 'let\'s go', 'let\'s leave'
+  ];
+  
+  const isGoodbye = goodbyePhrases.some(phrase => lowerText.includes(phrase));
+  
+  console.log('🔍 Checking if ending conversation:', isGoodbye);
+  
+  return isGoodbye && currentState.currentCharacter;
+}
   
   // Direct character references
   if (lowerText.includes('marvin') || lowerText.includes('neighbor')) {
@@ -499,8 +516,9 @@ const characterMentioned = detectCharacterMention(actionText, conversationState)
 console.log('🔍 Character mentioned detection result:', characterMentioned);
 console.log('🔍 Current conversation state before update:', conversationState);
 
-// If ending the current conversation
-if (isEndingConversation && conversationState.currentCharacter) {
+// Check if ending the current conversation
+if (isEndingConversation(actionText, conversationState)) {  // <-- Call the function with parameters
+  console.log('👋 Ending conversation with', conversationState.currentCharacter);
   setConversationState(prev => ({
     ...prev,
     pendingAction: 'END_CONVERSATION',
@@ -511,6 +529,7 @@ if (isEndingConversation && conversationState.currentCharacter) {
 // If moving to new character, update conversation state
 else if (characterMentioned && characterMentioned !== conversationState.currentCharacter) {
   const isFirstTime = !conversationState.characters[characterMentioned]?.everSpokenTo;
+  // ... rest of your code
   
   setConversationState(prev => ({
     ...prev,
@@ -631,14 +650,17 @@ console.log('📤 Sending to proxy with conversation state (updated):', {
 });
     // —— PROXY CALL ——
 try {
+  
   // Create local variables for the request instead of using state
-  const pendingAction = characterMentioned && characterMentioned !== conversationState.currentCharacter
+  const pendingAction = isEndingConversation(actionText, conversationState)
+  ? 'END_CONVERSATION'
+  : characterMentioned && characterMentioned !== conversationState.currentCharacter
     ? 'MOVE_TO_CHARACTER'
     : characterMentioned && characterMentioned === conversationState.currentCharacter
-    ? 'CONTINUE_CONVERSATION'
-    : isNavarroQuestion
-    ? 'ASK_NAVARRO'
-    : 'GENERAL_ACTION';
+      ? 'CONTINUE_CONVERSATION'
+      : isNavarroQuestion
+        ? 'ASK_NAVARRO'
+        : 'GENERAL_ACTION';
 
   // Include conversation state in the request
   const conversationContext = characterMentioned
