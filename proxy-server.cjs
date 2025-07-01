@@ -40,6 +40,27 @@ try {
           aboutNight: ["The scream was short", "Waited before calling 911"]
         }
       }
+    },
+    "Rachel Kim": {
+      role: "Best Friend",
+      personality: { traits: ["distraught", "helpful", "secretive"] },
+      knowledge: {
+        initialStatement: ["Found the body at 8:00 AM", "Was supposed to meet Mia for breakfast"],
+        followUpInfo: {
+          aboutRelationship: ["They were very close", "Rachel noticed Jordan's jealousy"]
+        },
+        hiddenKnowledge: ["Actually killed Mia", "Called Mia at 7:25 AM before 'finding' the body"]
+      }
+    },
+    "Jordan Valez": {
+      role: "Ex-Boyfriend",
+      personality: { traits: ["defensive", "volatile", "genuinely grieving"] },
+      knowledge: {
+        initialStatement: ["Was at The Lockwood Bar until midnight", "Has Uber receipt as proof"],
+        followUpInfo: {
+          aboutRelationship: ["Had restraining order in past", "Recently started talking to Mia again"]
+        }
+      }
     }
   };
 }
@@ -53,7 +74,7 @@ app.use(cors());
 app.use(express.json());
 
 // Initialize OpenAI client
-const openai = new OpenAI({
+const openAI = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
@@ -90,7 +111,19 @@ function analyzeApproachStyle(message) {
 }
 
 // Helper: Detect which character should speak next based on context
-function detectSpeakerFromContext(messages, allCharacters) {
+function detectSpeakerFromContext(messages, gameState, allCharacters) {
+  // If we have an explicit character from conversation state, use that
+  if (gameState.conversation && gameState.conversation.character) {
+    console.log(`🎭 Using conversation state character: ${gameState.conversation.character}`);
+    return gameState.conversation.character;
+  }
+  
+  // If we have a pending action that's ASK_NAVARRO, force Navarro
+  if (gameState.pendingAction === 'ASK_NAVARRO') {
+    console.log(`🎭 Action requires Navarro to speak`);
+    return "Navarro";
+  }
+  
   // Get the last few messages for context
   const recentMessages = messages.slice(-3);
   
@@ -148,6 +181,127 @@ function detectSpeakerFromContext(messages, allCharacters) {
   return "Navarro";
 }
 
+// Generate conversation context for character continuity
+function generateConversationContext(character, gameState) {
+  // Get character knowledge
+  const characterInfo = characterKnowledge[character] || {};
+  
+  // Base context for all conversations
+  let context = `
+CHARACTER BACKGROUND AND KNOWLEDGE:
+${character === "Navarro" ? 
+      `You are Detective Navarro, an experienced homicide detective and the partner of Detective ${gameState.detectiveName}.
+You have a world-weary demeanor but are loyal and dedicated to solving cases.` :
+      `You are ${character}, ${characterInfo.role || "a character"} in this case.
+${characterInfo.personality ? `Personality: ${characterInfo.personality.traits?.join(", ")}` : ""}`
+}`;
+
+  // Add character-specific knowledge
+  if (character === "Marvin Lott") {
+    context += `
+WHAT YOU KNOW:
+- You are the neighbor who called 911 after hearing a scream around 3:30 AM
+- You live next door to Mia Rodriguez, the victim
+- You heard what sounded like furniture moving shortly after the scream
+- You waited about 15 minutes before calling 911 because you weren't sure
+- You sometimes saw Mia with visitors, including a woman who visited frequently and a man who had arguments with her
+- You believe you might have seen someone leaving the building around 3:45 AM`;
+  } else if (character === "Rachel Kim") {
+    context += `
+WHAT YOU KNOW:
+- You are Mia's best friend (and secretly her killer)
+- You're pretending to be distraught about her death
+- You're claiming you found the body at 8:00 AM when you came to pick her up for breakfast
+- You're trying to deflect suspicion toward Jordan (Mia's ex-boyfriend)
+- You killed Mia because she was rekindling her relationship with Jordan
+- The truth is that you called Mia at 7:25 AM, before you "found" the body
+- You left a bracelet charm at the scene accidentally`;
+  } else if (character === "Jordan Valez") {
+    context += `
+WHAT YOU KNOW:
+- You are Mia's ex-boyfriend
+- You had a restraining order against you in the past, but claim it was a misunderstanding
+- You were at The Lockwood Bar until midnight on the night of the murder (verifiable by Uber receipt)
+- You and Mia had recently started talking again, which made Rachel jealous
+- You noticed Rachel was overly involved in your relationship with Mia`;
+  } else if (character === "Navarro") {
+    // Add case knowledge for Navarro based on current evidence and leads
+    context += `
+CASE KNOWLEDGE:
+- The victim is Mia Rodriguez, 26 years old
+- Found stabbed in her apartment
+- No sign of forced entry
+- Estimated time of death: between 2:00-4:00 AM
+- Neighbor (Marvin Lott) heard a scream at approximately 3:30 AM
+
+${gameState.evidence?.length > 0 ? `EVIDENCE SO FAR:\n- ${gameState.evidence.join('\n- ')}` : ''}
+${gameState.leads?.length > 0 ? `LEADS SO FAR:\n- ${gameState.leads.join('\n- ')}` : ''}`;
+  }
+
+  // Add conversation state-specific context
+  if (gameState.conversationPhase === 'GREETING' || 
+      (!gameState.conversation || gameState.conversation.state === 'INITIAL')) {
+    // First time meeting
+    context += `
+IMPORTANT: This is your FIRST conversation with the detective. React appropriately surprised/concerned about being questioned.`;
+  } 
+  else if (gameState.conversationPhase === 'QUESTIONING' && gameState.conversation?.state === 'RETURNING') {
+    // Returning to character after speaking with them before
+    context += `
+IMPORTANT: The detective is returning to speak with you after a previous conversation. Acknowledge that you've spoken before.`;
+  }
+  else if (gameState.conversationPhase === 'QUESTIONING' && gameState.conversation?.state === 'FOLLOWING_UP') {
+    // Follow-up questions in same conversation
+    context += `
+CONVERSATION CONTEXT:
+You are continuing a conversation with Detective ${gameState.detectiveName}.
+${gameState.conversation.topicsDiscussed && gameState.conversation.topicsDiscussed.length > 0 ? 
+      `You have already discussed: ${gameState.conversation.topicsDiscussed.join(", ")}` : 
+      "The detective is asking follow-up questions."
+}
+
+IMPORTANT: Do NOT repeat information you've already shared unless specifically asked to clarify something. Provide NEW details about any topic the detective asks about.`;
+
+    // Add character-specific follow-up hints
+    if (character === "Marvin Lott" && 
+        gameState.conversation.topicsDiscussed && 
+        gameState.conversation.topicsDiscussed.includes('noise')) {
+      context += `
+If pressed about what else you remember, mention:
+- You think you saw someone leaving the building - a woman who looked like the one who often visited Mia
+- You couldn't see her face clearly, but she seemed to be in a hurry`;
+    }
+    
+    if (character === "Rachel Kim" &&
+        gameState.conversation.topicsDiscussed &&
+        gameState.conversation.topicsDiscussed.includes('timing')) {
+      context += `
+If pressed about the timing of finding the body:
+- Get slightly defensive
+- Maintain that you arrived at 8:00 AM for breakfast
+- Deflect by suggesting the detective look into Jordan's anger issues`;
+    }
+    
+    if (character === "Jordan Valez" &&
+        gameState.conversation.topicsDiscussed &&
+        gameState.conversation.topicsDiscussed.includes('relationships')) {
+      context += `
+If pressed about your relationship with Mia:
+- Acknowledge that things were complicated between you
+- Emphasize that you were working on rebuilding trust
+- Mention that Rachel seemed possessive of Mia's time and attention`;
+    }
+  }
+  
+  // Handle conversation ending
+  if (gameState.conversationPhase === 'CONCLUDING') {
+    context += `
+IMPORTANT: The detective is ending the conversation with you. React appropriately (saying goodbye, offering to help further if needed, etc.)`;
+  }
+  
+  return context;
+}
+
 // Main route for chat interaction
 app.post('/chat', async (req, res) => {
   const { messages, gameState } = req.body;
@@ -159,7 +313,7 @@ app.post('/chat', async (req, res) => {
   const allCharacters = ["Navarro", "Marvin Lott", "Rachel Kim", "Jordan Valez"];
   
   // Detect who should speak based on context
-  const suggestedSpeaker = detectSpeakerFromContext(messages, allCharacters);
+  const suggestedSpeaker = detectSpeakerFromContext(messages, gameState, allCharacters);
   console.log(`🎭 Suggested next speaker: ${suggestedSpeaker}`);
   
   // Analyze the player's approach style (for responsive NPC behavior)
@@ -167,103 +321,10 @@ app.post('/chat', async (req, res) => {
   const approachStyle = analyzeApproachStyle(lastMessage);
   console.log(`👤 Player approach style: ${approachStyle}`);
   
-  // Get knowledge profile for the suggested speaker
-  const speakerKnowledge = characterKnowledge[suggestedSpeaker] || {
-    role: "Character",
-    personality: { traits: ["neutral"] },
-    knowledge: { basic: ["Limited information about the case"] }
-  };
+  // Generate character-specific conversation context
+  const conversationContext = generateConversationContext(suggestedSpeaker, gameState);
   
-  // Determine what information this character should reveal based on context
-  let relevantKnowledge = "";
-  
-  if (suggestedSpeaker === "Marvin Lott") {
-    relevantKnowledge = `
-MARVIN LOTT'S KNOWLEDGE:
-Initial Statement:
-${speakerKnowledge.knowledge.initialStatement.map(fact => `- ${fact}`).join('\n')}
-
-Follow-up Information (if asked directly):
-About the victim:
-${speakerKnowledge.knowledge.followUpInfo.aboutVictim.map(fact => `- ${fact}`).join('\n')}
-
-About visitors:
-${speakerKnowledge.knowledge.followUpInfo.aboutVisitors.map(fact => `- ${fact}`).join('\n')}
-
-About the night of the murder:
-${speakerKnowledge.knowledge.followUpInfo.aboutNight.map(fact => `- ${fact}`).join('\n')}
-
-Hidden information (only if pressed or questioned persistently):
-${speakerKnowledge.knowledge.hiddenInfo.map(fact => `- ${fact}`).join('\n')}
-
-Response style: ${approachStyle === 'aggressive' ? 
-  'Very nervous, hesitant, might withhold some details due to intimidation' : 
-  approachStyle === 'empathetic' ? 
-  'Open, forthcoming, provides additional details willingly' : 
-  'Moderately helpful but cautious'}
-`;
-  } else if (suggestedSpeaker === "Rachel Kim") {
-    relevantKnowledge = `
-RACHEL KIM'S KNOWLEDGE (SHE IS THE KILLER):
-Cover Story (what she will claim):
-${speakerKnowledge.knowledge.coverStory.map(fact => `- ${fact}`).join('\n')}
-
-Information about Mia:
-${speakerKnowledge.knowledge.aboutVictim.map(fact => `- ${fact}`).join('\n')}
-
-Deflections about Jordan:
-${speakerKnowledge.knowledge.deflection.map(fact => `- ${fact}`).join('\n')}
-
-Contradictions (DO NOT reveal these directly, but contradict her cover story if pressed):
-${speakerKnowledge.knowledge.contradictions.map(fact => `- ${fact}`).join('\n')}
-
-Response style: ${approachStyle === 'aggressive' ? 
-  'Defensive, may threaten to call a lawyer, sticks firmly to her story' : 
-  approachStyle === 'empathetic' ? 
-  'Plays on detective\'s sympathy, appears emotional, works to redirect suspicion to Jordan' : 
-  'Outwardly distraught but calculated in her responses'}
-`;
-  } else if (suggestedSpeaker === "Jordan Valez") {
-    relevantKnowledge = `
-JORDAN VALEZ'S KNOWLEDGE:
-Alibi:
-${speakerKnowledge.knowledge.alibi.map(fact => `- ${fact}`).join('\n')}
-
-About his relationship with Mia:
-${speakerKnowledge.knowledge.aboutRelationship.map(fact => `- ${fact}`).join('\n')}
-
-Observations about Rachel:
-${speakerKnowledge.knowledge.aboutRachel.map(fact => `- ${fact}`).join('\n')}
-
-Exonerating evidence (mention only if directly questioned):
-${speakerKnowledge.knowledge.exonerating.map(fact => `- ${fact}`).join('\n')}
-
-Response style: ${approachStyle === 'aggressive' ? 
-  'Confrontational, defensive, less cooperative, may demand lawyer' : 
-  approachStyle === 'empathetic' ? 
-  'Opens up about his history with Mia, shares suspicions about Rachel' : 
-  'Initially guarded but straightforward when answering direct questions'}
-`;
-  } else if (suggestedSpeaker === "Navarro") {
-    // For Navarro, factor in the difficulty mode
-    const difficultyMode = gameState.mode || "Classic";
-    
-    relevantKnowledge = `
-NAVARRO'S KNOWLEDGE:
-Initial observations of the crime scene:
-${speakerKnowledge.knowledge.initialObservations.map(fact => `- ${fact}`).join('\n')}
-
-Professional insights (if asked):
-${speakerKnowledge.knowledge.professionalInsights.map(fact => `- ${fact}`).join('\n')}
-
-Guidance style (based on ${difficultyMode} difficulty):
-${speakerKnowledge.guidance[difficultyMode] ? 
-  speakerKnowledge.guidance[difficultyMode].map(tip => `- ${tip}`).join('\n') : 
-  '- Provides balanced guidance when asked\n- Lets detective lead the investigation'}
-`;
-  }
-
-  // Build dynamic system prompt
+  // Build the system prompt with improved instructions
   const systemPrompt = `
 You are the dialogue engine for "First 48: The Simulation," a detective investigation game.
 Case: ${caseData.title || "The Murder of Mia Rodriguez"}
@@ -274,31 +335,32 @@ Leads: ${gameState.leads?.join(', ') || 'None yet'}
 
 CRITICAL DIALOGUE PATTERN: For every user input, you MUST respond with this sequence:
 1. First, a stage direction: {"type":"stage","description":"<action description>"}
-2. Then, a character's dialogue: {"type":"dialogue","speaker":"<Character Name>","text":"<their line>"}
+2. Then, a character's dialogue: {"type":"dialogue","speaker":"${suggestedSpeaker}","text":"<their line>"}
 
-IMPORTANT: Based on the current context, ${suggestedSpeaker} should speak next.
-Player's approach style: ${approachStyle} (affecting how characters respond)
+${conversationContext}
 
-${relevantKnowledge}
+${gameState.pendingAction === 'MOVE_TO_CHARACTER' ? 
+    `The detective is approaching ${suggestedSpeaker} for the first time. Generate appropriate stage direction for this transition, and have ${suggestedSpeaker} greet the detective.` :
+    gameState.pendingAction === 'CONTINUE_CONVERSATION' ?
+    `The detective is continuing the conversation with ${suggestedSpeaker}. Have ${suggestedSpeaker} respond to the detective's question with new information that hasn't been shared before.` :
+    gameState.pendingAction === 'END_CONVERSATION' ?
+    `The detective is ending the conversation with ${suggestedSpeaker}. Have ${suggestedSpeaker} say goodbye appropriately.` :
+    gameState.pendingAction === 'ASK_NAVARRO' ?
+    `The detective is asking for your professional opinion as Navarro. Provide insightful detective commentary based on the evidence and leads so far.` :
+    `Respond to the detective's action with appropriate stage direction and dialogue.`
+}
 
-Character personalities:
-- Navarro: Professional detective, world-weary, loyal partner, occasional dry humor
-- Marvin Lott: Elderly neighbor, nervous, observant but easily flustered
-- Rachel Kim: Mia's best friend, outwardly distraught but calculating, secretly the killer
-- Jordan Valez: Ex-boyfriend, emotional, defensive about his past, has solid alibi
+Character response style: ${approachStyle === 'aggressive' ? 
+  `${suggestedSpeaker} becomes defensive and less forthcoming due to the detective's aggressive approach.` : 
+  approachStyle === 'empathetic' ? 
+  `${suggestedSpeaker} appreciates the detective's empathetic approach and provides more detailed information.` : 
+  `${suggestedSpeaker} responds naturally to the detective's neutral approach.`}
 
-Dialogue rules:
-1. If the detective is knocking on someone's door or approaching them, THAT PERSON should respond.
-2. If the detective asks a direct question to a specific person, THAT PERSON should answer.
-3. If the detective is examining a crime scene, Navarro should provide detective commentary.
-4. NPCs should speak in their own distinct voice and perspective.
-5. Never break character or the fourth wall.
-6. Do not reveal that Rachel is the killer directly - she should appear as a grieving friend.
+IMPORTANT: Your response must maintain continuity with previous dialogue. The character should not repeat information they've already provided unless specifically asked to clarify.
 
-EXAMPLE DIALOGUE PATTERN:
-User: "Let's go talk to Marvin Lott"
-{"type":"stage","description":"Detective ${gameState.detectiveName || 'Morris'} walks to Marvin Lott's apartment and knocks on the door."}
-{"type":"dialogue","speaker":"Marvin Lott","text":"*opening the door slightly* Oh, Detective. I've been waiting for you. Still shaken up about what happened to poor Mia."}
+CONVERSATION MEMORY: For characters other than Navarro, recall previous interactions and reference them naturally. If this is a follow-up conversation, the character should acknowledge having spoken to the detective before.
+
+MOOD AND EMOTION: Each character has specific emotional states based on their role in the story. Convey these emotions through dialogue style, word choice, and small behavioral details in stage directions.
 
 Ensure each JSON object is on its own line with no additional text.
 `;
@@ -311,7 +373,7 @@ Ensure each JSON object is on its own line with no additional text.
 
   try {
     console.log('🔄 Sending request to OpenAI...');
-    const response = await openai.chat.completions.create({
+    const response = await openAI.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: chatMessages
     });
@@ -344,16 +406,59 @@ Ensure each JSON object is on its own line with no additional text.
           : `waits for ${suggestedSpeaker} to respond.`
       }`;
       
-      // Generate appropriate dialogue based on character
+      // Generate appropriate dialogue based on character and game state
       let dialogueText;
+
       if (suggestedSpeaker === "Marvin Lott") {
-        dialogueText = "Yes, Detective? I heard the commotion this morning. Terrible thing what happened to Mia. I called the police right after I heard that scream around 3:30 AM.";
-      } else if (suggestedSpeaker === "Rachel Kim") {
-        dialogueText = "I can't believe this happened to Mia. We were supposed to have breakfast this morning... I was the one who found her. Who would do something like this?";
-      } else if (suggestedSpeaker === "Jordan Valez") {
-        dialogueText = "Look, I know what you're thinking, but I wasn't anywhere near Mia's place last night. I was at The Lockwood Bar until midnight, then went straight home.";
-      } else {
-        dialogueText = "What's our next move, Detective? We should be thorough in our investigation.";
+        if (gameState.conversationPhase === 'GREETING' || gameState.conversation?.state === 'INITIAL') {
+          dialogueText = "*opening the door nervously* Oh! Detective, I—I didn't expect to see you so soon. I'm still so worried about what happened to Mia.";
+        } 
+        else if (gameState.conversationPhase === 'QUESTIONING' || gameState.conversation?.state === 'FOLLOWING_UP') {
+          dialogueText = "Yes, Detective? Was there something else about what happened last night?";
+        }
+        else if (gameState.conversationPhase === 'CONCLUDING') {
+          dialogueText = "Of course, Detective. I'll call you if I remember anything else. Please find whoever did this to poor Mia.";
+        }
+        else {
+          dialogueText = "Yes, Detective? How can I help with your investigation?";
+        }
+      } 
+      else if (suggestedSpeaker === "Rachel Kim") {
+        if (gameState.conversationPhase === 'GREETING' || gameState.conversation?.state === 'INITIAL') {
+          dialogueText = "*fighting back tears* I can't believe this happened to Mia. We were supposed to meet for breakfast... I was the one who found her.";
+        } 
+        else if (gameState.conversationPhase === 'QUESTIONING' || gameState.conversation?.state === 'FOLLOWING_UP') {
+          dialogueText = "*composing herself* What else did you want to know about Mia?";
+        }
+        else if (gameState.conversationPhase === 'CONCLUDING') {
+          dialogueText = "Please find who did this to her, Detective. She was my best friend.";
+        }
+        else {
+          dialogueText = "Yes, Detective? Anything to help find who did this to Mia.";
+        }
+      } 
+      else if (suggestedSpeaker === "Jordan Valez") {
+        if (gameState.conversationPhase === 'GREETING' || gameState.conversation?.state === 'INITIAL') {
+          dialogueText = "*defensively* Look, I know what you're thinking, but I wasn't anywhere near Mia's place last night. I was at The Lockwood Bar until midnight, then went straight home.";
+        } 
+        else if (gameState.conversationPhase === 'QUESTIONING' || gameState.conversation?.state === 'FOLLOWING_UP') {
+          dialogueText = "*calmer now* What else do you need to know, Detective?";
+        }
+        else if (gameState.conversationPhase === 'CONCLUDING') {
+          dialogueText = "I hope you find who did this. Despite our history, I still cared about her.";
+        }
+        else {
+          dialogueText = "What else do you want to know? I've told you where I was that night.";
+        }
+      } 
+      else {
+        if (gameState.pendingAction === 'ASK_NAVARRO') {
+          dialogueText = "Based on what we've gathered so far, I think we should follow up on the lead about " + 
+            (gameState.leads?.length > 0 ? gameState.leads[gameState.leads.length - 1] : "the neighbor's statement") + 
+            ". What's your take on it?";
+        } else {
+          dialogueText = "What's our next move, Detective? We should be thorough in our investigation.";
+        }
       }
       
       const fallback = [
