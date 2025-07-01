@@ -189,56 +189,59 @@ export default function App() {
   const currentClock = () => START_OF_DAY + timeElapsed;
 
   // Helper function to detect character mentions in user input
-  function detectCharacterMention(text, currentState) {
-    const lowerText = text.toLowerCase();
-    
-    // If we're already in a conversation with a character and not explicitly
-    // mentioning a different character, stay with the current character
-    if (
-      currentState.currentCharacter && 
-      currentState.conversationPhase !== 'CONCLUDING' &&
-      !lowerText.includes('leave') && 
-      !lowerText.includes('goodbye') && 
-      !lowerText.includes('thanks') &&
-      !lowerText.includes('talk to navarro')
-    ) {
-      // Check if explicitly mentioning another character
-      const otherCharacters = ['Marvin Lott', 'Rachel Kim', 'Jordan Valez']
-        .filter(c => c !== currentState.currentCharacter);
-      
-      const mentioningOther = otherCharacters.some(c => 
-        lowerText.includes(c.toLowerCase()) || 
-        (c === 'Marvin Lott' && lowerText.includes('neighbor')) ||
-        (c === 'Rachel Kim' && lowerText.includes('best friend')) ||
-        (c === 'Jordan Valez' && lowerText.includes('ex-boyfriend'))
-      );
-      
-      if (!mentioningOther) {
-        return currentState.currentCharacter;
-      }
-    }
-    
-    // Direct character references
-    if (lowerText.includes('marvin') || lowerText.includes('neighbor who called')) {
+function detectCharacterMention(text, currentState) {
+  const lowerText = text.toLowerCase();
+  console.log('🔍 Detecting character in:', lowerText);
+  
+  // Direct character references
+  if (lowerText.includes('marvin') || lowerText.includes('neighbor')) {
+    console.log('✅ Detected Marvin Lott');
+    return 'Marvin Lott';
+  }
+  
+  if (lowerText.includes('rachel') || lowerText.includes('best friend')) {
+    console.log('✅ Detected Rachel Kim');
+    return 'Rachel Kim';
+  }
+  
+  if (lowerText.includes('jordan') || lowerText.includes('ex-boyfriend') || lowerText.includes('ex boyfriend')) {
+    console.log('✅ Detected Jordan Valez');
+    return 'Jordan Valez';
+  }
+  
+  // Action-based references
+  const actionPhrases = ['talk to', 'speak with', 'interview', 'ask', 'go to', 'visit'];
+  
+  for (const phrase of actionPhrases) {
+    if (lowerText.includes(`${phrase} neighbor`) || lowerText.includes(`${phrase} marvin`)) {
+      console.log('✅ Detected intent to speak with Marvin Lott');
       return 'Marvin Lott';
     }
     
-    if (lowerText.includes('rachel') || lowerText.includes('best friend')) {
+    if (lowerText.includes(`${phrase} rachel`) || lowerText.includes(`${phrase} best friend`)) {
+      console.log('✅ Detected intent to speak with Rachel Kim');
       return 'Rachel Kim';
     }
     
-    if (lowerText.includes('jordan') || lowerText.includes('ex-boyfriend') || lowerText.includes('ex boyfriend')) {
+    if (lowerText.includes(`${phrase} jordan`) || lowerText.includes(`${phrase} ex`)) {
+      console.log('✅ Detected intent to speak with Jordan Valez');
       return 'Jordan Valez';
     }
-    
-    // Action-based references
-    if (lowerText.includes('talk to neighbor') || lowerText.includes('speak with neighbor') || 
-        lowerText.includes('interview neighbor') || lowerText.includes('ask neighbor')) {
-      return 'Marvin Lott';
-    }
-    
-    return null;
   }
+  
+  // If already in conversation with a character and not ending it
+  if (currentState.currentCharacter && 
+      currentState.conversationPhase !== 'CONCLUDING' &&
+      !lowerText.includes('leave') && 
+      !lowerText.includes('goodbye') && 
+      !lowerText.includes('thanks')) {
+    console.log('✅ Continuing conversation with', currentState.currentCharacter);
+    return currentState.currentCharacter;
+  }
+  
+  console.log('❌ No character detected');
+  return null;
+}
 
   // Helper function to extract potential topics from dialogue
   function extractTopics(text) {
@@ -480,89 +483,92 @@ export default function App() {
     setMsgs(m => [...m, { speaker: detectiveName, content: actionText }]);
     
     // Determine if this is a direct question to Navarro
-    const isNavarroQuestion = actionText.toLowerCase().includes('navarro') || 
-                            actionText.toLowerCase().includes('partner') ||
-                            actionText.toLowerCase().includes('what do you think') ||
-                            actionText.startsWith('?');
+const isNavarroQuestion = actionText.toLowerCase().includes('navarro') || 
+                         actionText.toLowerCase().includes('partner') ||
+                         actionText.toLowerCase().includes('what do you think') ||
+                         actionText.startsWith('?');
 
-    // Determine conversation ending phrases
-    const isEndingConversation = actionText.toLowerCase().includes('goodbye') ||
-                                actionText.toLowerCase().includes('thanks') ||
-                                actionText.toLowerCase().includes('leave') ||
-                                actionText.toLowerCase().includes('let\'s go');
+// Determine conversation ending phrases
+const isEndingConversation = actionText.toLowerCase().includes('goodbye') ||
+                             actionText.toLowerCase().includes('thanks') ||
+                             actionText.toLowerCase().includes('leave') ||
+                             actionText.toLowerCase().includes('let\'s go');
 
-    // Determine if this is an action to move to a different character
-    const characterMentioned = detectCharacterMention(actionText, conversationState);
+// Determine if this is an action to move to a different character
+const characterMentioned = detectCharacterMention(actionText, conversationState);
+console.log('🔍 Character mentioned detection result:', characterMentioned);
+console.log('🔍 Current conversation state before update:', conversationState);
 
-    // If ending the current conversation
-    if (isEndingConversation && conversationState.currentCharacter) {
-      setConversationState(prev => ({
-        ...prev,
-        pendingAction: 'END_CONVERSATION',
-        conversationPhase: 'CONCLUDING',
-        lastResponseTime: Date.now()
-      }));
+// If ending the current conversation
+if (isEndingConversation && conversationState.currentCharacter) {
+  setConversationState(prev => ({
+    ...prev,
+    pendingAction: 'END_CONVERSATION',
+    conversationPhase: 'CONCLUDING',
+    lastResponseTime: Date.now()
+  }));
+}
+// If moving to new character, update conversation state
+else if (characterMentioned && characterMentioned !== conversationState.currentCharacter) {
+  const isFirstTime = !conversationState.characters[characterMentioned]?.everSpokenTo;
+  
+  setConversationState(prev => ({
+    ...prev,
+    pendingAction: 'MOVE_TO_CHARACTER',
+    currentCharacter: characterMentioned,
+    conversationPhase: isFirstTime ? 'GREETING' : 'QUESTIONING',
+    lastResponseTime: Date.now(),
+    characters: {
+      ...prev.characters,
+      [characterMentioned]: {
+        state: isFirstTime ? 'INITIAL' : 'RETURNING',
+        topicsDiscussed: prev.characters[characterMentioned]?.topicsDiscussed || [],
+        lastInteractionTime: Date.now(),
+        everSpokenTo: true
+      }
     }
-    // If moving to new character, update conversation state
-    else if (characterMentioned && characterMentioned !== conversationState.currentCharacter) {
-      const isFirstTime = !conversationState.characters[characterMentioned]?.everSpokenTo;
-      
-      setConversationState(prev => ({
-        ...prev,
-        pendingAction: 'MOVE_TO_CHARACTER',
-        currentCharacter: characterMentioned,
-        conversationPhase: isFirstTime ? 'GREETING' : 'QUESTIONING',
-        lastResponseTime: Date.now(),
-        characters: {
-          ...prev.characters,
-          [characterMentioned]: {
-            state: isFirstTime ? 'INITIAL' : 'RETURNING',
-            topicsDiscussed: prev.characters[characterMentioned]?.topicsDiscussed || [],
-            lastInteractionTime: Date.now(),
-            everSpokenTo: true
-          }
-        }
-      }));
+  }));
+}
+// If staying with same character, update to follow-up state
+else if (characterMentioned && characterMentioned === conversationState.currentCharacter) {
+  setConversationState(prev => ({
+    ...prev,
+    pendingAction: 'CONTINUE_CONVERSATION',
+    conversationPhase: 'QUESTIONING',
+    lastResponseTime: Date.now(),
+    characters: {
+      ...prev.characters,
+      [characterMentioned]: {
+        ...prev.characters[characterMentioned],
+        state: 'FOLLOWING_UP',
+        lastInteractionTime: Date.now()
+      }
     }
-    // If staying with same character, update to follow-up state
-    else if (characterMentioned && characterMentioned === conversationState.currentCharacter) {
-      setConversationState(prev => ({
-        ...prev,
-        pendingAction: 'CONTINUE_CONVERSATION',
-        conversationPhase: 'QUESTIONING',
-        lastResponseTime: Date.now(),
-        characters: {
-          ...prev.characters,
-          [characterMentioned]: {
-            ...prev.characters[characterMentioned],
-            state: 'FOLLOWING_UP',
-            lastInteractionTime: Date.now()
-          }
-        }
-      }));
-    }
-    // If it's a direct question to Navarro
-    else if (isNavarroQuestion) {
-      setConversationState(prev => ({
-        ...prev,
-        pendingAction: 'ASK_NAVARRO',
-        currentCharacter: 'Navarro',
-        lastResponseTime: Date.now()
-      }));
-    }
-    // Otherwise it's a general action
-    else {
-      setConversationState(prev => ({
-        ...prev,
-        pendingAction: 'GENERAL_ACTION',
-        currentCharacter: null,
-        lastResponseTime: Date.now()
-      }));
-      
-      // For general actions, add Navarro's affirmation before proceeding
-      const affirmation = getNavarroAffirmation(actionText);
-      setMsgs(m => [...m, { speaker: 'Navarro', content: affirmation }]);
-    }
+  }));
+}
+// If it's a direct question to Navarro
+else if (isNavarroQuestion) {
+  setConversationState(prev => ({
+    ...prev,
+    pendingAction: 'ASK_NAVARRO',
+    currentCharacter: 'Navarro',
+    lastResponseTime: Date.now()
+  }));
+}
+// Otherwise it's a general action
+else {
+  setConversationState(prev => ({
+    ...prev,
+    pendingAction: 'GENERAL_ACTION',
+    currentCharacter: null,
+    lastResponseTime: Date.now()
+  }));
+  
+  // For general actions, add Navarro's affirmation before proceeding
+  const affirmation = getNavarroAffirmation(actionText);
+  setMsgs(m => [...m, { speaker: 'Navarro', content: affirmation }]);
+}
+
   
     // call gameEngine with full state
     const result = applyAction({
@@ -617,46 +623,65 @@ export default function App() {
     }
     
     setLoading(true);
-
+// Add this debug log right before the proxy call
+console.log('📤 Sending to proxy with conversation state (updated):', {
+  currentCharacter: conversationState.currentCharacter,
+  pendingAction: conversationState.pendingAction,
+  conversationPhase: conversationState.conversationPhase
+});
     // —— PROXY CALL ——
-    try {
-      // Include conversation state in the request
-      const conversationContext = conversationState.currentCharacter 
-        ? {
-            character: conversationState.currentCharacter,
-            state: conversationState.characters[conversationState.currentCharacter]?.state || 'INITIAL',
-            topicsDiscussed: conversationState.characters[conversationState.currentCharacter]?.topicsDiscussed || []
-          }
-        : null;
-      
-      const history = [...msgs, { speaker: detectiveName, content: actionText }].map(m => ({
-        role: m.speaker === 'System' ? 'system'
-            : m.speaker === detectiveName ? 'user'
-            : 'assistant',
-        content: m.content
-      }));
-      
-      const res = await fetch('http://localhost:3001/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: history,
-          gameState: {
-            currentTime: fmt(currentClock()),
-            timeRemaining: fmt(timeRemaining),
-            location: LOCATION,
-            mode,
-            evidence: newState.evidence,
-            leads: newState.leads,
-            detectiveName,
-            conversation: conversationContext,
-            pendingAction: conversationState.pendingAction,
-            conversationPhase: conversationState.conversationPhase
-          }
-        }),
-      });
-      
-      const { text } = await res.json();
+try {
+  // Create local variables for the request instead of using state
+  const pendingAction = characterMentioned && characterMentioned !== conversationState.currentCharacter
+    ? 'MOVE_TO_CHARACTER'
+    : characterMentioned && characterMentioned === conversationState.currentCharacter
+    ? 'CONTINUE_CONVERSATION'
+    : isNavarroQuestion
+    ? 'ASK_NAVARRO'
+    : 'GENERAL_ACTION';
+
+  // Include conversation state in the request
+  const conversationContext = characterMentioned
+    ? {
+        character: characterMentioned,
+        state: conversationState.characters[characterMentioned]?.state || 'INITIAL',
+        topicsDiscussed: conversationState.characters[characterMentioned]?.topicsDiscussed || []
+      }
+    : null;
+  
+  console.log('📤 Sending to proxy with direct values:', {
+    currentCharacter: characterMentioned,
+    pendingAction: pendingAction
+  });
+
+  const history = [...msgs, { speaker: detectiveName, content: actionText }].map(m => ({
+    role: m.speaker === 'System' ? 'system'
+        : m.speaker === detectiveName ? 'user'
+        : 'assistant',
+    content: m.content
+  }));
+  
+  const res = await fetch('http://localhost:3001/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messages: history,
+      gameState: {
+        currentTime: fmt(currentClock()),
+        timeRemaining: fmt(timeRemaining),
+        location: LOCATION,
+        mode,
+        evidence: newState.evidence,
+        leads: newState.leads,
+        detectiveName,
+        conversation: conversationContext,
+        pendingAction: pendingAction,
+        currentCharacter: characterMentioned
+      }
+    }),
+  });
+  
+  const { text } = await res.json();
 
       // —— DEBUG LOGS ——
       const lines = text.trim().split(/\r?\n/);

@@ -112,10 +112,18 @@ function analyzeApproachStyle(message) {
 
 // Helper: Detect which character should speak next based on context
 function detectSpeakerFromContext(messages, gameState, allCharacters) {
+  console.log('🎭 detectSpeakerFromContext called with gameState:', JSON.stringify(gameState, null, 2));
+  
   // If we have an explicit character from conversation state, use that
   if (gameState.conversation && gameState.conversation.character) {
     console.log(`🎭 Using conversation state character: ${gameState.conversation.character}`);
     return gameState.conversation.character;
+  }
+  
+  // Check for MOVE_TO_CHARACTER pendingAction
+  if (gameState.pendingAction === 'MOVE_TO_CHARACTER' && gameState.currentCharacter) {
+    console.log(`🎭 Moving to character: ${gameState.currentCharacter}`);
+    return gameState.currentCharacter;
   }
   
   // If we have a pending action that's ASK_NAVARRO, force Navarro
@@ -123,6 +131,8 @@ function detectSpeakerFromContext(messages, gameState, allCharacters) {
     console.log(`🎭 Action requires Navarro to speak`);
     return "Navarro";
   }
+  
+
   
   // Get the last few messages for context
   const recentMessages = messages.slice(-3);
