@@ -294,6 +294,18 @@ function detectCharacterMention(text, currentState) {
     return topics;
   }
 
+function isGeneralInvestigativeAction(text) {
+  const lowerText = text.toLowerCase();
+  const actionKeywords = [
+    'photograph', 'photo', 'picture', 'take pic', 
+    'examine', 'check', 'look at', 'search', 'investigate',
+    'analyze', 'test', 'document', 'collect', 'gather',
+    'forensic', 'lab', 'send to', 'process'
+  ];
+  
+  return actionKeywords.some(keyword => lowerText.includes(keyword));
+}
+
   // Helper function to get a contextual Navarro affirmation
   function getNavarroAffirmation(actionText) {
     // List of affirmative responses for Navarro
@@ -428,34 +440,36 @@ function detectCharacterMention(text, currentState) {
   // Process pending notifications after character dialogue
   const processPendingNotifications = () => {
     if (pendingNotifications.length === 0) return;
+    console.log('📣 Processing pending notifications:', pendingNotifications);
     
     // Process each pending notification
     pendingNotifications.forEach(notification => {
       if (notification.type === 'lead') {
-        // Show lead notification
+        const leadItem = notification.item;
+        // Show lead notification in chat
         setMsgs(m => [
           ...m, 
           { 
             speaker: 'System', 
-            content: `🕵️ New lead unlocked: ${notification.item.description}`
+            content: `🕵️ New lead unlocked: ${leadItem.description}`
           }
         ]);
         
         // Show notepad notification
-        showNotepadNotification('lead', notification.item);
+        showNotepadNotification('lead', leadItem);
         
         // If the lead has a narrative, add that as a follow-up from Navarro
-        if (notification.item.narrative) {
+        if (leadItem.narrative) {
           setMsgs(m => [
             ...m,
             {
               speaker: 'Navarro',
-              content: notification.item.narrative
+              content: leadItem.narrative
             }
           ]);
         }
       } else if (notification.type === 'evidence') {
-        // Show evidence notification
+        // Show evidence notification in chat
         const evidenceDef = notification.item;
         setMsgs(m => [
           ...m, 
@@ -486,120 +500,44 @@ function detectCharacterMention(text, currentState) {
     setPendingNotifications([]);
   };
 
-  // —— SEND ACTION / MESSAGE ——
-  const sendMessage = async () => {
-    const actionText = input.trim();
-    console.log('✅ App.sendMessage: about to call applyAction with:', actionText);
-    if (!actionText) return;
-    setInput('');
-
-    // Add user message immediately
-    setMsgs(m => [...m, { speaker: detectiveName, content: actionText }]);
-    
-    // Determine if this is a direct question to Navarro
-let isNavarroQuestion = actionText.toLowerCase().includes('navarro') || 
-                         actionText.toLowerCase().includes('partner') ||
-                         actionText.toLowerCase().includes('what do you think') ||
-                         actionText.startsWith('?');
-
-
-// Determine if this is an action to move to a different character
-let characterMentioned = detectCharacterMention(actionText, conversationState);
-console.log('🔍 Character mentioned detection result:', characterMentioned);
-console.log('🔍 Current conversation state before update:', conversationState);
-
-// Determine conversation context BEFORE state updates to avoid race conditions
-isNavarroQuestion = actionText.toLowerCase().includes('navarro') || 
-                   actionText.toLowerCase().includes('partner') ||
-                   actionText.toLowerCase().includes('what do you think') ||
-                   actionText.startsWith('?');
-
-const isEndingChat = isEndingConversation(actionText, conversationState);
-characterMentioned = detectCharacterMention(actionText, conversationState);
-  
-  console.log('🔍 Character mentioned detection result:', characterMentioned);
-  console.log('🔍 Is ending conversation:', isEndingChat);
-  console.log('🔍 Current conversation state before update:', conversationState);
-
-  // Calculate new state values BEFORE updating state
-  let pendingAction = 'GENERAL_ACTION';
-  let currentCharacter = null;
-  let conversationPhase = 'NONE';
-  let updatedCharacters = { ...conversationState.characters };
-
-  if (isEndingChat) {
-    console.log('👋 Ending conversation with', conversationState.currentCharacter);
-    pendingAction = 'END_CONVERSATION';
-    conversationPhase = 'CONCLUDING';
-    currentCharacter = conversationState.currentCharacter;
-  }
-  else if (characterMentioned && characterMentioned !== conversationState.currentCharacter) {
-    const isFirstTime = !conversationState.characters[characterMentioned]?.everSpokenTo;
-    console.log('🎯 Moving to new character:', characterMentioned, 'First time:', isFirstTime);
-    
-    pendingAction = 'MOVE_TO_CHARACTER';
-    currentCharacter = characterMentioned;
-    conversationPhase = isFirstTime ? 'GREETING' : 'QUESTIONING';
-    
-    updatedCharacters[characterMentioned] = {
-      state: isFirstTime ? 'INITIAL' : 'RETURNING',
-      topicsDiscussed: conversationState.characters[characterMentioned]?.topicsDiscussed || [],
-      lastInteractionTime: Date.now(),
-      everSpokenTo: true
-    };
-  }
-  else if (characterMentioned && characterMentioned === conversationState.currentCharacter) {
-    console.log('🔄 Continuing conversation with', characterMentioned);
-    pendingAction = 'CONTINUE_CONVERSATION';
-    currentCharacter = characterMentioned;
-    conversationPhase = 'QUESTIONING';
-    
-    if (updatedCharacters[characterMentioned]) {
-      updatedCharacters[characterMentioned] = {
-        ...updatedCharacters[characterMentioned],
-        state: 'FOLLOWING_UP',
-        lastInteractionTime: Date.now()
-      };
-    }
-  }
-  else if (isNavarroQuestion) {
-    console.log('❓ Asking Navarro');
-    pendingAction = 'ASK_NAVARRO';
-    currentCharacter = 'Navarro';
-  }
-  else {
-    console.log('🔧 General action');
-    pendingAction = 'GENERAL_ACTION';
-    currentCharacter = null;
-    
-    // For general actions, add Navarro's affirmation before proceeding
-    const affirmation = getNavarroAffirmation(actionText);
-    setMsgs(m => [...m, { speaker: 'Navarro', content: affirmation }]);
-  }
-
-  // Update conversation state once with calculated values
-  setConversationState({
-    currentCharacter: currentCharacter,
-    characters: updatedCharacters,
-    pendingAction: pendingAction,
-    conversationPhase: conversationPhase,
-    lastResponseTime: Date.now()
-  });
     // —— PROXY CALL ——
-try {
+const sendMessage = async () => {
+  if (!input.trim()) return;
   
-  const conversationContext = currentCharacter
-  ? {
-      character: currentCharacter,
-      state: updatedCharacters[currentCharacter]?.state || 'INITIAL',
-      topicsDiscussed: updatedCharacters[currentCharacter]?.topicsDiscussed || []
-    }
-  : null;
+  setMsgs(m => [...m, { speaker: detectiveName, content: input }]);
+  setLoading(true);
+  
+  // Extract current character and state from conversationState
+  const currentCharacter = conversationState.currentCharacter;
+  const pendingAction = conversationState.pendingAction;
+  
+  // Check if the message is ending a conversation
+  const isEnding = isEndingConversation(input, conversationState);
+  const conversationPhase = isEnding ? 'CONCLUDING' : conversationState.conversationPhase;
+  
+  // Check if starting a new conversation with a character
+  const mentionedCharacter = detectCharacterMention(input, conversationState);
+  
+  // Update conversation state before sending request
+  const updatedCharacters = {...conversationState.characters};
+  const actionText = input;
+  
+  // Clear input field
+  setInput('');
+  
+  try {
+    const conversationContext = currentCharacter
+    ? {
+        character: currentCharacter,
+        state: updatedCharacters[currentCharacter]?.state || 'INITIAL',
+        topicsDiscussed: updatedCharacters[currentCharacter]?.topicsDiscussed || []
+      }
+    : null;
 
-console.log('📤 Sending to proxy with calculated values:', {
-  currentCharacter: currentCharacter,
-  pendingAction: pendingAction
-});
+    console.log('📤 Sending to proxy with calculated values:', {
+      currentCharacter: currentCharacter,
+      pendingAction: pendingAction
+    });
 
   const history = [...msgs, { speaker: detectiveName, content: actionText }].map(m => ({
     role: m.speaker === 'System' ? 'system'
