@@ -81,7 +81,21 @@ export default function App() {
     "Marvin Lott, the neighbor who called it in, might have important information.",
     "Need to establish a timeline of events leading to the murder."
   ]);
-
+const isEndingConversation = useCallback((text, currentState) => {
+  const lowerText = text.toLowerCase();
+  const goodbyePhrases = [
+    'goodbye', 'bye', 'see you', 'thanks', 'thank you',
+    'that will be all', 'that is all', 'that\'s all',
+    'if we need', 'we will find you', 'find you later',
+    'contact you', 'that helps', 'let\'s go', 'let\'s leave'
+  ];
+  
+  const isGoodbye = goodbyePhrases.some(phrase => lowerText.includes(phrase));
+  
+  console.log('🔍 Checking if ending conversation:', isGoodbye);
+  
+  return isGoodbye && currentState.currentCharacter;
+}, []);
   // —— DERIVED NOTES STATE ——
   // Function to update detective thoughts based on game state
   const updateDetectiveThoughts = () => {
@@ -193,23 +207,6 @@ function detectCharacterMention(text, currentState) {
   const lowerText = text.toLowerCase();
   console.log('🔍 Detecting character in:', lowerText);
 
-  // Helper function to detect when the player is ending a conversation
-function isEndingConversation(text, currentState) {
-  const lowerText = text.toLowerCase();
-  const goodbyePhrases = [
-    'goodbye', 'bye', 'see you', 'thanks', 'thank you',
-    'that will be all', 'that is all', 'that\'s all',
-    'if we need', 'we will find you', 'find you later',
-    'contact you', 'that helps', 'let\'s go', 'let\'s leave'
-  ];
-  
-  const isGoodbye = goodbyePhrases.some(phrase => lowerText.includes(phrase));
-  
-  console.log('🔍 Checking if ending conversation:', isGoodbye);
-  
-  return isGoodbye && currentState.currentCharacter;
-}
-  
   // Direct character references
   if (lowerText.includes('marvin') || lowerText.includes('neighbor')) {
     console.log('✅ Detected Marvin Lott');
@@ -500,181 +497,109 @@ function isEndingConversation(text, currentState) {
     setMsgs(m => [...m, { speaker: detectiveName, content: actionText }]);
     
     // Determine if this is a direct question to Navarro
-const isNavarroQuestion = actionText.toLowerCase().includes('navarro') || 
+let isNavarroQuestion = actionText.toLowerCase().includes('navarro') || 
                          actionText.toLowerCase().includes('partner') ||
                          actionText.toLowerCase().includes('what do you think') ||
                          actionText.startsWith('?');
 
-// Determine conversation ending phrases
-const isEndingConversation = actionText.toLowerCase().includes('goodbye') ||
-                             actionText.toLowerCase().includes('thanks') ||
-                             actionText.toLowerCase().includes('leave') ||
-                             actionText.toLowerCase().includes('let\'s go');
 
 // Determine if this is an action to move to a different character
-const characterMentioned = detectCharacterMention(actionText, conversationState);
+let characterMentioned = detectCharacterMention(actionText, conversationState);
 console.log('🔍 Character mentioned detection result:', characterMentioned);
 console.log('🔍 Current conversation state before update:', conversationState);
 
-// Check if ending the current conversation
-if (isEndingConversation(actionText, conversationState)) {  // <-- Call the function with parameters
-  console.log('👋 Ending conversation with', conversationState.currentCharacter);
-  setConversationState(prev => ({
-    ...prev,
-    pendingAction: 'END_CONVERSATION',
-    conversationPhase: 'CONCLUDING',
-    lastResponseTime: Date.now()
-  }));
-}
-// If moving to new character, update conversation state
-else if (characterMentioned && characterMentioned !== conversationState.currentCharacter) {
-  const isFirstTime = !conversationState.characters[characterMentioned]?.everSpokenTo;
-  // ... rest of your code
+// Determine conversation context BEFORE state updates to avoid race conditions
+isNavarroQuestion = actionText.toLowerCase().includes('navarro') || 
+                   actionText.toLowerCase().includes('partner') ||
+                   actionText.toLowerCase().includes('what do you think') ||
+                   actionText.startsWith('?');
+
+const isEndingChat = isEndingConversation(actionText, conversationState);
+characterMentioned = detectCharacterMention(actionText, conversationState);
   
-  setConversationState(prev => ({
-    ...prev,
-    pendingAction: 'MOVE_TO_CHARACTER',
-    currentCharacter: characterMentioned,
-    conversationPhase: isFirstTime ? 'GREETING' : 'QUESTIONING',
-    lastResponseTime: Date.now(),
-    characters: {
-      ...prev.characters,
-      [characterMentioned]: {
-        state: isFirstTime ? 'INITIAL' : 'RETURNING',
-        topicsDiscussed: prev.characters[characterMentioned]?.topicsDiscussed || [],
-        lastInteractionTime: Date.now(),
-        everSpokenTo: true
-      }
-    }
-  }));
-}
-// If staying with same character, update to follow-up state
-else if (characterMentioned && characterMentioned === conversationState.currentCharacter) {
-  setConversationState(prev => ({
-    ...prev,
-    pendingAction: 'CONTINUE_CONVERSATION',
-    conversationPhase: 'QUESTIONING',
-    lastResponseTime: Date.now(),
-    characters: {
-      ...prev.characters,
-      [characterMentioned]: {
-        ...prev.characters[characterMentioned],
+  console.log('🔍 Character mentioned detection result:', characterMentioned);
+  console.log('🔍 Is ending conversation:', isEndingChat);
+  console.log('🔍 Current conversation state before update:', conversationState);
+
+  // Calculate new state values BEFORE updating state
+  let pendingAction = 'GENERAL_ACTION';
+  let currentCharacter = null;
+  let conversationPhase = 'NONE';
+  let updatedCharacters = { ...conversationState.characters };
+
+  if (isEndingChat) {
+    console.log('👋 Ending conversation with', conversationState.currentCharacter);
+    pendingAction = 'END_CONVERSATION';
+    conversationPhase = 'CONCLUDING';
+    currentCharacter = conversationState.currentCharacter;
+  }
+  else if (characterMentioned && characterMentioned !== conversationState.currentCharacter) {
+    const isFirstTime = !conversationState.characters[characterMentioned]?.everSpokenTo;
+    console.log('🎯 Moving to new character:', characterMentioned, 'First time:', isFirstTime);
+    
+    pendingAction = 'MOVE_TO_CHARACTER';
+    currentCharacter = characterMentioned;
+    conversationPhase = isFirstTime ? 'GREETING' : 'QUESTIONING';
+    
+    updatedCharacters[characterMentioned] = {
+      state: isFirstTime ? 'INITIAL' : 'RETURNING',
+      topicsDiscussed: conversationState.characters[characterMentioned]?.topicsDiscussed || [],
+      lastInteractionTime: Date.now(),
+      everSpokenTo: true
+    };
+  }
+  else if (characterMentioned && characterMentioned === conversationState.currentCharacter) {
+    console.log('🔄 Continuing conversation with', characterMentioned);
+    pendingAction = 'CONTINUE_CONVERSATION';
+    currentCharacter = characterMentioned;
+    conversationPhase = 'QUESTIONING';
+    
+    if (updatedCharacters[characterMentioned]) {
+      updatedCharacters[characterMentioned] = {
+        ...updatedCharacters[characterMentioned],
         state: 'FOLLOWING_UP',
         lastInteractionTime: Date.now()
-      }
+      };
     }
-  }));
-}
-// If it's a direct question to Navarro
-else if (isNavarroQuestion) {
-  setConversationState(prev => ({
-    ...prev,
-    pendingAction: 'ASK_NAVARRO',
-    currentCharacter: 'Navarro',
+  }
+  else if (isNavarroQuestion) {
+    console.log('❓ Asking Navarro');
+    pendingAction = 'ASK_NAVARRO';
+    currentCharacter = 'Navarro';
+  }
+  else {
+    console.log('🔧 General action');
+    pendingAction = 'GENERAL_ACTION';
+    currentCharacter = null;
+    
+    // For general actions, add Navarro's affirmation before proceeding
+    const affirmation = getNavarroAffirmation(actionText);
+    setMsgs(m => [...m, { speaker: 'Navarro', content: affirmation }]);
+  }
+
+  // Update conversation state once with calculated values
+  setConversationState({
+    currentCharacter: currentCharacter,
+    characters: updatedCharacters,
+    pendingAction: pendingAction,
+    conversationPhase: conversationPhase,
     lastResponseTime: Date.now()
-  }));
-}
-// Otherwise it's a general action
-else {
-  setConversationState(prev => ({
-    ...prev,
-    pendingAction: 'GENERAL_ACTION',
-    currentCharacter: null,
-    lastResponseTime: Date.now()
-  }));
-  
-  // For general actions, add Navarro's affirmation before proceeding
-  const affirmation = getNavarroAffirmation(actionText);
-  setMsgs(m => [...m, { speaker: 'Navarro', content: affirmation }]);
-}
-
-  
-    // call gameEngine with full state
-    const result = applyAction({
-      timeElapsed,
-      timeRemaining,
-      evidence,
-      leads,
-      interviewCounts,
-      actionsPerformed,
-      interviewsCompleted
-    }, actionText);
-
-    if (result.error) {
-      setMsgs(m => [...m, { speaker: 'System', content: `❌ ${result.error}` }]);
-      return;
-    }
-
-    const { newState, cost, newLeads, discoveredEvidence } = result;
-    console.log('🔍 [DEBUG] leads after applyAction:', newState.leads);
-    console.log('🔍 [DEBUG] evidence discovered:', discoveredEvidence);
-    
-    // Update game state
-    setTimeElapsed(newState.timeElapsed);
-    setTimeRemaining(newState.timeRemaining);
-    setEvidence(newState.evidence);
-    setLeads(newState.leads);
-    setInterviewCounts(newState.interviewCounts);
-    setActionsPerformed(newState.actionsPerformed);
-    setInterviewsCompleted(newState.interviewsCompleted);
-    
-    // Queue leads for after dialogue
-    if (newLeads && newLeads.length > 0) {
-      const notifications = newLeads.map(lead => ({
-        type: 'lead',
-        item: lead,
-        timestamp: Date.now()
-      }));
-      setPendingNotifications(prev => [...prev, ...notifications]);
-    }
-    
-    // Queue evidence notifications for after dialogue
-    if (discoveredEvidence && discoveredEvidence.length > 0) {
-      const notifications = discoveredEvidence
-        .map(evidenceId => evidenceDefinitions.find(e => e.id === evidenceId))
-        .filter(Boolean)
-        .map(evidenceDef => ({
-          type: 'evidence',
-          item: evidenceDef,
-          timestamp: Date.now()
-        }));
-      setPendingNotifications(prev => [...prev, ...notifications]);
-    }
-    
-    setLoading(true);
-// Add this debug log right before the proxy call
-console.log('📤 Sending to proxy with conversation state (updated):', {
-  currentCharacter: conversationState.currentCharacter,
-  pendingAction: conversationState.pendingAction,
-  conversationPhase: conversationState.conversationPhase
-});
+  });
     // —— PROXY CALL ——
 try {
   
-  // Create local variables for the request instead of using state
-  const pendingAction = isEndingConversation(actionText, conversationState)
-  ? 'END_CONVERSATION'
-  : characterMentioned && characterMentioned !== conversationState.currentCharacter
-    ? 'MOVE_TO_CHARACTER'
-    : characterMentioned && characterMentioned === conversationState.currentCharacter
-      ? 'CONTINUE_CONVERSATION'
-      : isNavarroQuestion
-        ? 'ASK_NAVARRO'
-        : 'GENERAL_ACTION';
+  const conversationContext = currentCharacter
+  ? {
+      character: currentCharacter,
+      state: updatedCharacters[currentCharacter]?.state || 'INITIAL',
+      topicsDiscussed: updatedCharacters[currentCharacter]?.topicsDiscussed || []
+    }
+  : null;
 
-  // Include conversation state in the request
-  const conversationContext = characterMentioned
-    ? {
-        character: characterMentioned,
-        state: conversationState.characters[characterMentioned]?.state || 'INITIAL',
-        topicsDiscussed: conversationState.characters[characterMentioned]?.topicsDiscussed || []
-      }
-    : null;
-  
-  console.log('📤 Sending to proxy with direct values:', {
-    currentCharacter: characterMentioned,
-    pendingAction: pendingAction
-  });
+console.log('📤 Sending to proxy with calculated values:', {
+  currentCharacter: currentCharacter,
+  pendingAction: pendingAction
+});
 
   const history = [...msgs, { speaker: detectiveName, content: actionText }].map(m => ({
     role: m.speaker === 'System' ? 'system'
@@ -693,12 +618,12 @@ try {
         timeRemaining: fmt(timeRemaining),
         location: LOCATION,
         mode,
-        evidence: newState.evidence,
-        leads: newState.leads,
+        evidence: evidence,
+        leads: leads,
         detectiveName,
         conversation: conversationContext,
-        pendingAction: pendingAction,
-        currentCharacter: characterMentioned
+        pendingAction: pendingAction,  // Use calculated value
+currentCharacter: currentCharacter  // Use calculated value
       }
     }),
   });
@@ -758,14 +683,16 @@ try {
       }, 500); // Short delay to ensure dialogue is processed first
       
       // Reset conversation state if character is exiting the conversation
-      if (conversationState.conversationPhase === 'CONCLUDING') {
-        setConversationState(prev => ({
-          ...prev,
-          currentCharacter: null,
-          pendingAction: null,
-          conversationPhase: 'NONE'
-        }));
-      }
+if (conversationPhase === 'CONCLUDING') {
+  setTimeout(() => {
+    setConversationState(prev => ({
+      ...prev,
+      currentCharacter: null,
+      pendingAction: null,
+      conversationPhase: 'NONE'
+    }));
+  }, 1000); // Small delay to let the goodbye message process
+}
       
     } catch (err) {
       setMsgs(m => [...m, { speaker: 'Navarro', content: `❌ ${err.message}` }]);

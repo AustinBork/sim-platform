@@ -381,162 +381,139 @@ Ensure each JSON object is on its own line with no additional text.
     ...messages.map(m => ({ role: m.role, content: m.content }))
   ];
 
-  try {
-    console.log('🔄 Sending request to OpenAI...');
-    const response = await openAI.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: chatMessages
-    });
-    const text = response.choices[0].message.content;
-    console.log('🔴 RAW MODEL OUTPUT:', text);
+ try {
+  console.log('🔄 Sending request to OpenAI...');
+  const response = await openAI.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: chatMessages
+  });
+  const text = response.choices[0].message.content;
+  console.log('🔴 RAW MODEL OUTPUT:', text);
+  
+  // IMPROVED: Simplified and more robust parsing
+  let result = [];
+  
+  // Method 1: Try to parse as JSON lines first
+  const lines = text.trim().split(/\r?\n/);
+  let foundValidJSON = false;
+  
+  for (const line of lines) {
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed && (parsed.type === 'stage' || parsed.type === 'dialogue')) {
+        result.push(parsed);
+        foundValidJSON = true;
+      }
+    } catch {
+      // Not JSON, continue
+    }
+  }
+  
+  // Method 2: If no valid JSON found, parse natural text
+  if (!foundValidJSON) {
+    console.log('📝 No JSON found, parsing natural text');
     
-    // Parse the response
-    const lines = text.trim().split(/\r?\n/);
-    const parsed = lines
-      .map(l => { 
-        try { 
-          return JSON.parse(l); 
-        } catch (e) { 
-          console.error('❌ Failed to parse line:', l, e); 
-          return null; 
-        } 
-      })
-      .filter(o => o !== null);
+    // Look for stage directions in asterisks
+    const stageRegex = /\*([^*]+)\*/;
+    const stageMatch = text.match(stageRegex);
     
-    console.log('🧩 Parsed objects:', parsed);
+    let stageDescription = '';
+    let remainingText = text;
     
-    // Handle case where no valid JSON was returned
-    if (parsed.length === 0) {
-      console.warn('⚠️ No valid JSON objects found in response');
+    if (stageMatch) {
+      stageDescription = stageMatch[1].trim();
+      remainingText = text.replace(stageRegex, '').trim();
       
-      // Generate a fallback response based on context
-      const stageDescription = `Detective ${gameState.detectiveName || 'Morris'} ${
-        suggestedSpeaker === "Navarro" 
-          ? "looks around the crime scene thoughtfully." 
-          : `waits for ${suggestedSpeaker} to respond.`
-      }`;
+      result.push({
+        type: 'stage',
+        description: stageDescription
+      });
+    }
+    
+    // Look for dialogue with speaker prefixes
+    const speakerRegex = /^(Navarro|Marvin Lott|Rachel Kim|Jordan Valez):\s*(.+)$/gm;
+    let dialogueMatch;
+    let foundDialogue = false;
+    
+    while ((dialogueMatch = speakerRegex.exec(remainingText)) !== null) {
+      foundDialogue = true;
+      result.push({
+        type: 'dialogue',
+        speaker: dialogueMatch[1],
+        text: dialogueMatch[2].trim()
+      });
+    }
+    
+    // If no dialogue with speaker found, use suggested speaker
+    if (!foundDialogue && remainingText.trim().length > 0) {
+      // Clean up any remaining speaker prefixes
+      const cleanText = remainingText.replace(/^(Navarro|Marvin Lott|Rachel Kim|Jordan Valez):\s*/i, '').trim();
       
-      // Generate appropriate dialogue based on character and game state
-      let dialogueText;
-
-      if (suggestedSpeaker === "Marvin Lott") {
-        if (gameState.conversationPhase === 'GREETING' || gameState.conversation?.state === 'INITIAL') {
-          dialogueText = "*opening the door nervously* Oh! Detective, I—I didn't expect to see you so soon. I'm still so worried about what happened to Mia.";
-        } 
-        else if (gameState.conversationPhase === 'QUESTIONING' || gameState.conversation?.state === 'FOLLOWING_UP') {
-          dialogueText = "Yes, Detective? Was there something else about what happened last night?";
-        }
-        else if (gameState.conversationPhase === 'CONCLUDING') {
-          dialogueText = "Of course, Detective. I'll call you if I remember anything else. Please find whoever did this to poor Mia.";
-        }
-        else {
-          dialogueText = "Yes, Detective? How can I help with your investigation?";
-        }
-      } 
-      else if (suggestedSpeaker === "Rachel Kim") {
-        if (gameState.conversationPhase === 'GREETING' || gameState.conversation?.state === 'INITIAL') {
-          dialogueText = "*fighting back tears* I can't believe this happened to Mia. We were supposed to meet for breakfast... I was the one who found her.";
-        } 
-        else if (gameState.conversationPhase === 'QUESTIONING' || gameState.conversation?.state === 'FOLLOWING_UP') {
-          dialogueText = "*composing herself* What else did you want to know about Mia?";
-        }
-        else if (gameState.conversationPhase === 'CONCLUDING') {
-          dialogueText = "Please find who did this to her, Detective. She was my best friend.";
-        }
-        else {
-          dialogueText = "Yes, Detective? Anything to help find who did this to Mia.";
-        }
-      } 
-      else if (suggestedSpeaker === "Jordan Valez") {
-        if (gameState.conversationPhase === 'GREETING' || gameState.conversation?.state === 'INITIAL') {
-          dialogueText = "*defensively* Look, I know what you're thinking, but I wasn't anywhere near Mia's place last night. I was at The Lockwood Bar until midnight, then went straight home.";
-        } 
-        else if (gameState.conversationPhase === 'QUESTIONING' || gameState.conversation?.state === 'FOLLOWING_UP') {
-          dialogueText = "*calmer now* What else do you need to know, Detective?";
-        }
-        else if (gameState.conversationPhase === 'CONCLUDING') {
-          dialogueText = "I hope you find who did this. Despite our history, I still cared about her.";
-        }
-        else {
-          dialogueText = "What else do you want to know? I've told you where I was that night.";
-        }
-      } 
-      else {
-        if (gameState.pendingAction === 'ASK_NAVARRO') {
-          dialogueText = "Based on what we've gathered so far, I think we should follow up on the lead about " + 
-            (gameState.leads?.length > 0 ? gameState.leads[gameState.leads.length - 1] : "the neighbor's statement") + 
-            ". What's your take on it?";
-        } else {
-          dialogueText = "What's our next move, Detective? We should be thorough in our investigation.";
-        }
+      if (cleanText.length > 0) {
+        result.push({
+          type: 'dialogue',
+          speaker: suggestedSpeaker,
+          text: cleanText
+        });
+      }
+    }
+    
+    // If we still have nothing useful
+    if (result.length === 0) {
+      // Create stage direction if we don't have one
+      if (!stageDescription) {
+        result.push({
+          type: 'stage',
+          description: `Detective ${gameState.detectiveName || 'Morris'} continues the investigation.`
+        });
       }
       
-      const fallback = [
-        JSON.stringify({ type: 'stage', description: stageDescription }),
-        JSON.stringify({ type: 'dialogue', speaker: suggestedSpeaker, text: dialogueText })
-      ].join('\n');
-      
-      res.json({ text: fallback });
-      return;
+      // Use the raw text as dialogue
+      const cleanText = text.replace(/\*[^*]*\*/g, '').trim();
+      if (cleanText.length > 0) {
+        result.push({
+          type: 'dialogue',
+          speaker: suggestedSpeaker,
+          text: cleanText
+        });
+      } else {
+        // Last resort fallback
+        result.push({
+          type: 'dialogue',
+          speaker: suggestedSpeaker,
+          text: suggestedSpeaker === "Navarro" 
+            ? "What's our next move, Detective?" 
+            : "Is there something specific you wanted to ask me?"
+        });
+      }
     }
-    
-    // Ensure we have a stage direction
-    let hasStage = parsed.some(obj => obj.type === 'stage');
-    if (!hasStage) {
-      const stageObj = JSON.stringify({ 
-        type: 'stage', 
-        description: `Detective ${gameState.detectiveName || 'Morris'} continues the investigation.` 
-      });
-      text = stageObj + '\n' + text;
-    }
-    
-    // Ensure we have a dialogue response
-    let hasDialogue = parsed.some(obj => obj.type === 'dialogue');
-    if (!hasDialogue) {
-      const dialogueObj = JSON.stringify({
-        type: 'dialogue',
-        speaker: suggestedSpeaker,
-        text: suggestedSpeaker === "Navarro" 
-          ? "What's our next move, Detective?" 
-          : "Is there something specific you wanted to ask me?"
-      });
-      text = text + '\n' + dialogueObj;
-    }
-    
-    // If we have dialogue but wrong speaker, add suggested speaker's response
-    const dialogueObjs = parsed.filter(obj => obj.type === 'dialogue');
-    const hasSuggestedSpeaker = dialogueObjs.some(obj => obj.speaker === suggestedSpeaker);
-    
-    if (dialogueObjs.length > 0 && !hasSuggestedSpeaker && suggestedSpeaker !== "Navarro") {
-      // The model didn't have the right character speak
-      const additionalDialogue = JSON.stringify({
-        type: 'dialogue',
-        speaker: suggestedSpeaker,
-        text: `*appearing at the door* Detective, I heard you wanted to speak with me?`
-      });
-      text = text + '\n' + additionalDialogue;
-    }
-    
-    res.json({ text });
-  } catch (err) {
-    console.error('❌ OpenAI error:', err);
-    // Provide a graceful fallback
-    const fallback = [
-      JSON.stringify({ 
-        type: 'stage', 
-        description: `Detective ${gameState.detectiveName || 'Morris'} continues the investigation.` 
-      }),
-      JSON.stringify({ 
-        type: 'dialogue', 
-        speaker: 'Navarro', 
-        text: `There seems to be a communication issue. Let's try a different approach.` 
-      })
-    ].join('\n');
-    
-    res.status(200).json({ text: fallback });
   }
-});
+  
+  console.log('🧩 Final processed response objects:', result);
+  
+  // Convert to expected format
+  const outputLines = result.map(obj => JSON.stringify(obj)).join('\n');
+  res.json({ text: outputLines });
 
+} catch (err) {
+  console.error('❌ OpenAI error:', err);
+  
+  // Provide a graceful fallback that matches expected format
+  const fallback = [
+    JSON.stringify({ 
+      type: 'stage', 
+      description: `Detective ${gameState.detectiveName || 'Morris'} continues the investigation.` 
+    }),
+    JSON.stringify({ 
+      type: 'dialogue', 
+      speaker: suggestedSpeaker || 'Navarro', 
+      text: `There seems to be a communication issue. Let's try a different approach.` 
+    })
+  ].join('\n');
+  
+  res.status(200).json({ text: fallback });
+}
+});
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`🚀 Proxy server listening on port ${PORT}`);
