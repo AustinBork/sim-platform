@@ -343,9 +343,15 @@ Remaining time: ${gameState.timeRemaining || 'Unknown'}
 Evidence: ${gameState.evidence?.join(', ') || 'None yet'}
 Leads: ${gameState.leads?.join(', ') || 'None yet'}
 
-CRITICAL DIALOGUE PATTERN: For every user input, you MUST respond with this sequence:
+CRITICAL DIALOGUE FORMAT INSTRUCTIONS:
+You MUST respond using ONLY the following sequence of JSON objects, each on its own line:
+
 1. First, a stage direction: {"type":"stage","description":"<action description>"}
 2. Then, a character's dialogue: {"type":"dialogue","speaker":"${suggestedSpeaker}","text":"<their line>"}
+
+DO NOT include any text, explanations, or commentary outside these JSON objects.
+DO NOT use markdown formatting, asterisks, or any other non-JSON syntax.
+The speaker MUST be "${suggestedSpeaker}" unless there is a compelling reason for another character to interject.
 
 ${conversationContext}
 
@@ -390,7 +396,7 @@ Ensure each JSON object is on its own line with no additional text.
   const text = response.choices[0].message.content;
   console.log('🔴 RAW MODEL OUTPUT:', text);
   
-  // IMPROVED: Simplified and more robust parsing
+  // IMPROVED: Enhanced parsing for both JSON and text formats
   let result = [];
   
   // Method 1: Try to parse as JSON lines first
@@ -409,83 +415,85 @@ Ensure each JSON object is on its own line with no additional text.
     }
   }
   
-  // Method 2: If no valid JSON found, parse natural text
+  // Method 2: If no valid JSON found, use enhanced text parsing
   if (!foundValidJSON) {
-    console.log('📝 No JSON found, parsing natural text');
+    console.log('📝 No JSON found, using enhanced natural text parsing');
     
-    // Look for stage directions in asterisks
-    const stageRegex = /\*([^*]+)\*/;
-    const stageMatch = text.match(stageRegex);
-    
-    let stageDescription = '';
+    // Extract stage directions (text in asterisks)
+    const stageMatches = text.match(/\*([^*]+)\*/g);
     let remainingText = text;
     
-    if (stageMatch) {
-      stageDescription = stageMatch[1].trim();
-      remainingText = text.replace(stageRegex, '').trim();
-      
+    if (stageMatches && stageMatches.length > 0) {
+      // Process the first stage direction
+      const stageContent = stageMatches[0].replace(/^\*|\*$/g, '').trim();
       result.push({
         type: 'stage',
-        description: stageDescription
+        description: stageContent
       });
+      
+      // Remove the processed stage direction from text
+      remainingText = remainingText.replace(stageMatches[0], '').trim();
     }
     
-    // Look for dialogue with speaker prefixes
-    const speakerRegex = /^(Navarro|Marvin Lott|Rachel Kim|Jordan Valez):\s*(.+)$/gm;
-    let dialogueMatch;
-    let foundDialogue = false;
+    // Try to extract explicit character dialogue with speaker prefixes
+    // Look for patterns like "Character Name: Their dialogue" or "Character Name\nTheir dialogue"
+    const dialoguePattern = new RegExp(`(${allCharacters.join('|')})\\s*:?\\s*([\\s\\S]+)`, 'i');
+    const dialogueMatch = remainingText.match(dialoguePattern);
     
-    while ((dialogueMatch = speakerRegex.exec(remainingText)) !== null) {
-      foundDialogue = true;
+    if (dialogueMatch) {
+      // We found an explicit speaker attribution
       result.push({
         type: 'dialogue',
-        speaker: dialogueMatch[1],
+        speaker: allCharacters.find(c => c.toLowerCase() === dialogueMatch[1].toLowerCase()) || dialogueMatch[1],
         text: dialogueMatch[2].trim()
+      });
+    } else if (remainingText.trim().length > 0) {
+      // No explicit speaker found - use the suggested speaker from context
+      console.log(`🔍 No explicit speaker found, using suggested speaker: ${suggestedSpeaker}`);
+      result.push({
+        type: 'dialogue',
+        speaker: suggestedSpeaker,
+        text: remainingText.trim()
       });
     }
     
-    // If no dialogue with speaker found, use suggested speaker
-    if (!foundDialogue && remainingText.trim().length > 0) {
-      // Clean up any remaining speaker prefixes
-      const cleanText = remainingText.replace(/^(Navarro|Marvin Lott|Rachel Kim|Jordan Valez):\s*/i, '').trim();
-      
-      if (cleanText.length > 0) {
-        result.push({
-          type: 'dialogue',
-          speaker: suggestedSpeaker,
-          text: cleanText
-        });
-      }
-    }
-    
-    // If we still have nothing useful
-    if (result.length === 0) {
-      // Create stage direction if we don't have one
-      if (!stageDescription) {
+    // Validation step - if we have no valid results, add fallbacks
+    if (result.length === 0 || !result.some(r => r.type === 'dialogue')) {
+      // Ensure we have at least a basic response
+      if (!result.some(r => r.type === 'stage')) {
         result.push({
           type: 'stage',
           description: `Detective ${gameState.detectiveName || 'Morris'} continues the investigation.`
         });
       }
       
-      // Use the raw text as dialogue
-      const cleanText = text.replace(/\*[^*]*\*/g, '').trim();
-      if (cleanText.length > 0) {
-        result.push({
-          type: 'dialogue',
-          speaker: suggestedSpeaker,
-          text: cleanText
-        });
-      } else {
-        // Last resort fallback
-        result.push({
-          type: 'dialogue',
-          speaker: suggestedSpeaker,
-          text: suggestedSpeaker === "Navarro" 
-            ? "What's our next move, Detective?" 
-            : "Is there something specific you wanted to ask me?"
-        });
-      }
+      result.push({
+        type: 'dialogue',
+        speaker: suggestedSpeaker,
+        text: "I'm listening. What else would you like to know?"
+      });
+    }
+  }
+  
+  // Validation: ensure the speaker matches expected conversation state
+  if (result.some(r => r.type === 'dialogue')) {
+    const dialogueObj = result.find(r => r.type === 'dialogue');
+    
+    // If conversation has a specific character context, validate speaker
+    if (gameState.conversation && 
+        gameState.conversation.character && 
+        gameState.pendingAction !== 'ASK_NAVARRO' &&
+        dialogueObj.speaker !== gameState.conversation.character && 
+        dialogueObj.speaker !== 'Navarro') {
+      
+      console.log(`⚠️ Speaker mismatch! Expected ${gameState.conversation.character}, got ${dialogueObj.speaker}. Fixing.`);
+      dialogueObj.speaker = gameState.conversation.character;
+    }
+    
+    // If pending action indicates Navarro should speak, enforce that
+    if (gameState.pendingAction === 'ASK_NAVARRO' && dialogueObj.speaker !== 'Navarro') {
+      console.log(`⚠️ Speaker mismatch! Expected Navarro for ASK_NAVARRO action, got ${dialogueObj.speaker}. Fixing.`);
+      dialogueObj.speaker = 'Navarro';
     }
   }
   
