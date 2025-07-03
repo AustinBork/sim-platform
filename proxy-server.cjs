@@ -192,6 +192,7 @@ function detectSpeakerFromContext(messages, gameState, allCharacters) {
 }
 
 // Generate conversation context for character continuity
+// Generate conversation context for character continuity
 function generateConversationContext(character, gameState) {
   // Get character knowledge
   const characterInfo = characterKnowledge[character] || {};
@@ -334,6 +335,7 @@ app.post('/chat', async (req, res) => {
   // Generate character-specific conversation context
   const conversationContext = generateConversationContext(suggestedSpeaker, gameState);
   
+  // Build the system prompt with improved instructions
   // Build the system prompt with improved instructions
   const systemPrompt = `
 You are the dialogue engine for "First 48: The Simulation," a detective investigation game.

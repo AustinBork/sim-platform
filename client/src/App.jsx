@@ -37,6 +37,164 @@ function getEvidenceCommentary(evidenceId) {
       return null;
   }
 }
+// Add this conversation debug toolkit to your codebase
+const ConversationDebug = {
+  // Enable or disable debug logging
+  enabled: true,
+  
+  // Log levels
+  levels: {
+    INFO: '📝',
+    WARN: '⚠️',
+    ERROR: '❌',
+    STATE: '🔄',
+    TOPIC: '🏷️',
+    DIALOGUE: '💬',
+    TRANSITION: '🚪'
+  },
+  
+  // Main logging function
+  log: function(level, message, data = null) {
+    if (!this.enabled) return;
+    
+    const prefix = this.levels[level] || '🔍';
+    
+    if (data) {
+      console.log(`${prefix} [${level}] ${message}`, data);
+    } else {
+      console.log(`${prefix} [${level}] ${message}`);
+    }
+  },
+  
+  // Specialized logging methods
+  logState: function(message, state) {
+    this.log('STATE', message, state);
+  },
+  
+  logTopicDetection: function(text, topics) {
+    this.log('TOPIC', `Detected topics in: "${text.substring(0, 40)}${text.length > 40 ? '...' : ''}"`, topics);
+  },
+  
+  logDialogue: function(speaker, message) {
+    this.log('DIALOGUE', `${speaker}: "${message.substring(0, 60)}${message.length > 60 ? '...' : ''}""`);
+  },
+  
+  logTransition: function(from, to, action) {
+    this.log('TRANSITION', `Scene transition: ${from || 'none'} → ${to || 'none'} (${action})`);
+  },
+  
+  // State validation
+  validateStateTransition: function(prevState, newState) {
+    // Check for valid phase transitions
+    const validTransitions = {
+      'NONE': ['GREETING', 'NONE'],
+      'GREETING': ['QUESTIONING', 'CONCLUDING', 'NONE'],
+      'QUESTIONING': ['QUESTIONING', 'CONCLUDING', 'NONE'],
+      'CONCLUDING': ['NONE', 'GREETING']
+    };
+    
+    if (prevState.conversationPhase !== newState.conversationPhase) {
+      const isValidTransition = validTransitions[prevState.conversationPhase]?.includes(newState.conversationPhase);
+      
+      if (!isValidTransition) {
+        this.log('WARN', `Invalid phase transition: ${prevState.conversationPhase} → ${newState.conversationPhase}`);
+        return false;
+      }
+    }
+    
+    // Check for other potential issues
+    if (newState.conversationPhase === 'GREETING' && !newState.currentCharacter) {
+      this.log('ERROR', 'GREETING phase requires a currentCharacter to be set');
+      return false;
+    }
+    
+    if (newState.conversationPhase === 'QUESTIONING' && !newState.currentCharacter) {
+      this.log('ERROR', 'QUESTIONING phase requires a currentCharacter to be set');
+      return false;
+    }
+    
+    if (newState.conversationPhase === 'NONE' && newState.currentCharacter) {
+      this.log('WARN', 'NONE phase should not have a currentCharacter');
+    }
+    
+    return true;
+  },
+  
+  // Topic detection validation
+  validateTopicDetection: function(text, detectedTopics) {
+    // Check for expected topics based on keywords
+    const expectedTopicPatterns = {
+      'weapon': ['knife', 'stab', 'weapon'],
+      'timing': ['time', 'when', 'hour', 'morning', 'night', 'clock'],
+      'alibi': ['where', 'were you', 'doing', 'that night'],
+      'victim': ['mia', 'victim', 'rodriguez', 'dead', 'body']
+    };
+    
+    const lowerText = text.toLowerCase();
+    
+    // Check for missing expected topics
+    Object.entries(expectedTopicPatterns).forEach(([topic, keywords]) => {
+      if (keywords.some(word => lowerText.includes(word)) && !detectedTopics.includes(topic)) {
+        this.log('WARN', `Expected topic "${topic}" not detected in: "${text.substring(0, 40)}..."`, {
+          text: text,
+          detectedTopics: detectedTopics,
+          trigger: keywords.find(word => lowerText.includes(word))
+        });
+      }
+    });
+    
+    return true;
+  },
+  
+  // Conversation consistency check
+  checkConversationConsistency: function(conversationState) {
+    // Check if we have proper character states
+    if (conversationState.currentCharacter) {
+      const characterData = conversationState.characters[conversationState.currentCharacter];
+      
+      if (!characterData) {
+        this.log('ERROR', `Current character "${conversationState.currentCharacter}" has no data in characters object`);
+        return false;
+      }
+      
+      if (!characterData.state) {
+        this.log('WARN', `Character "${conversationState.currentCharacter}" has no state property`);
+      }
+      
+      if (!characterData.topicsDiscussed) {
+        this.log('WARN', `Character "${conversationState.currentCharacter}" has no topicsDiscussed array`);
+      }
+    }
+    
+    // Check for orphaned character references
+    if (conversationState.conversationPhase !== 'NONE' && !conversationState.currentCharacter) {
+      this.log('ERROR', `Conversation phase ${conversationState.conversationPhase} active but no currentCharacter set`);
+      return false;
+    }
+    
+    return true;
+  },
+  
+  // Generate debug state summary
+  getConversationSummary: function(state) {
+    if (!state) return 'No state available';
+    
+    return {
+      phase: state.conversationPhase,
+      currentCharacter: state.currentCharacter,
+      action: state.pendingAction,
+      characterCount: Object.keys(state.characters || {}).length,
+      topics: state.globalTopics?.length || 0,
+      characters: Object.entries(state.characters || {}).map(([name, data]) => ({
+        name,
+        state: data.state,
+        topicCount: data.topicsDiscussed?.length || 0,
+        visitCount: data.visitCount || 0,
+        mood: data.mood
+      }))
+    };
+  }
+};
 
 export default function App() {
   const START_OF_DAY = 7 * 60 + 50; // 7:50 AM
@@ -57,12 +215,26 @@ export default function App() {
   const [seenNpcInterviewed, setSeenNpcInterviewed] = useState({});
   const [pendingNotifications, setPendingNotifications] = useState([]);
   const [conversationState, setConversationState] = useState({
-    currentCharacter: null,
-    characters: {},
-    pendingAction: null,
-    conversationPhase: 'NONE', // 'GREETING', 'QUESTIONING', 'CONCLUDING'
-    lastResponseTime: null
-  });
+  currentCharacter: null,
+  conversationPhase: 'NONE', // 'NONE', 'GREETING', 'QUESTIONING', 'CONCLUDING'
+  pendingAction: null,
+  lastResponseTime: null,
+  globalTopics: [], // Add this line
+  characters: {
+    // Per-character state will be populated dynamically:
+    // 'Character Name': {
+    //   state: 'INITIAL' | 'RETURNING',
+    //   topicsDiscussed: ['topic1', 'topic2', ...],
+    //   relationshipLevel: 0, // Increases with meaningful interactions
+    //   lastInteractionTime: null, // In-game time of last conversation
+    //   keyInformationShared: [], // Important case facts they've shared
+    //   suspicionLevel: 0, // How suspicious they seem (0-10)
+    //   mood: 'neutral' // neutral, friendly, defensive, suspicious, etc.
+    // }
+  }
+});  
+const currentClock = () => START_OF_DAY + timeElapsed;
+
   // new state for lead triggers
   const [actionsPerformed, setActionsPerformed]     = useState([]);
   const [interviewsCompleted, setInterviewsCompleted] = useState([]);
@@ -81,44 +253,311 @@ export default function App() {
     "Marvin Lott, the neighbor who called it in, might have important information.",
     "Need to establish a timeline of events leading to the murder."
   ]);
+   // Create an enhanced conversation state setter with validation
+  function setConversationStateWithValidation(updater) {
+    setConversationState(prevState => {
+      // Call the original updater to get the new state
+      const newState = updater(prevState);
+      
+      // Validate the state transition
+      ConversationDebug.validateStateTransition(prevState, newState);
+      
+      // Check conversation consistency
+      ConversationDebug.checkConversationConsistency(newState);
+      
+      // Log state change
+      ConversationDebug.logState("Conversation state updated", 
+        ConversationDebug.getConversationSummary(newState)
+      );
+      
+      // Return the new state
+      return newState;
+    });
+  }
 
+// Add this function to handle character state updates
+function updateCharacterState(characterName, updates, setState) {
+  setState(prevState => {
+    // Get existing character data or initialize if this is first interaction
+    const existingCharacterData = 
+      prevState.characters[characterName] || 
+      {
+        state: 'INITIAL',
+        topicsDiscussed: [],
+        relationshipLevel: 0,
+        lastInteractionTime: null,
+        keyInformationShared: [],
+        suspicionLevel: 0,
+        mood: 'neutral',
+        visitCount: 0
+      };
+    
+    // Create updated character data by merging existing with updates
+    const updatedCharacterData = {
+      ...existingCharacterData,
+      ...updates,
+      // Always increment visit count when explicitly updating character state
+      visitCount: updates.visitCount !== undefined ? 
+        updates.visitCount : 
+        (existingCharacterData.visitCount + (updates.state === 'RETURNING' ? 1 : 0))
+    };
+    
+    console.log(`🔄 Updating character state for ${characterName}:`, updatedCharacterData);
+    
+    // Return updated conversation state
+    return {
+      ...prevState,
+      characters: {
+        ...prevState.characters,
+        [characterName]: updatedCharacterData
+      }
+    };
+  });
+}
+
+// Add this function to track topic discussion
+function recordTopicDiscussion(character, topics, setState) {
+  if (!character || !topics || topics.length === 0) return;
+  
+  setState(prevState => {
+    const existingCharacter = prevState.characters[character] || { 
+      topicsDiscussed: [],
+      state: 'INITIAL'
+    };
+    
+    // Add only new topics (that haven't been discussed before)
+    const newTopics = topics.filter(
+      topic => !existingCharacter.topicsDiscussed.includes(topic)
+    );
+    
+    if (newTopics.length === 0) return prevState; // No new topics to add
+    
+    console.log(`📝 Recording new topics for ${character}:`, newTopics);
+    
+    // Return updated state with new topics added
+    return {
+      ...prevState,
+      characters: {
+        ...prevState.characters,
+        [character]: {
+          ...existingCharacter,
+          topicsDiscussed: [...existingCharacter.topicsDiscussed, ...newTopics]
+        }
+      }
+    };
+  });
+}
+
+// Add this function to check if a topic has been discussed with a character
+function hasDiscussedTopic(character, topic, conversationState) {
+  if (!character || !topic) return false;
+  
+  const characterData = conversationState.characters[character];
+  if (!characterData || !characterData.topicsDiscussed) return false;
+  
+  return characterData.topicsDiscussed.includes(topic);
+}
+
+// Add this function to get character mood description
+function getCharacterMood(character, conversationState) {
+  if (!character) return 'neutral';
+  
+  const characterData = conversationState.characters[character];
+  if (!characterData || !characterData.mood) return 'neutral';
+  
+  return characterData.mood;
+}
+
+// Add this function to update character mood based on interaction
+function updateCharacterMood(character, interaction, setState) {
+  if (!character) return;
+  
+  setState(prevState => {
+    const existingCharacter = prevState.characters[character] || { 
+      mood: 'neutral',
+      suspicionLevel: 0
+    };
+    
+    // Determine mood change based on interaction type
+    let moodChange = 'neutral';
+    let suspicionChange = 0;
+    
+    switch (interaction) {
+      case 'accusatory':
+        moodChange = 'defensive';
+        suspicionChange = 1;
+        break;
+      case 'friendly':
+        moodChange = 'friendly';
+        suspicionChange = -1;
+        break;
+      case 'suspicious':
+        moodChange = 'nervous';
+        suspicionChange = 2;
+        break;
+      case 'empathetic':
+        moodChange = 'open';
+        suspicionChange = -2;
+        break;
+      case 'professional':
+        moodChange = 'neutral';
+        break;
+      default:
+        // No change
+        return prevState;
+    }
+    
+    // Calculate new suspicion level (clamped between 0-10)
+    const newSuspicionLevel = Math.max(0, Math.min(10, 
+      existingCharacter.suspicionLevel + suspicionChange
+    ));
+    
+    console.log(`😊 Updating ${character}'s mood to ${moodChange}, suspicion: ${newSuspicionLevel}`);
+    
+    // Return updated state with new mood
+    return {
+      ...prevState,
+      characters: {
+        ...prevState.characters,
+        [character]: {
+          ...existingCharacter,
+          mood: moodChange,
+          suspicionLevel: newSuspicionLevel
+        }
+      }
+    };
+  });
+}
 // Enhanced conversation ending detection
+// Enhanced conversation ending detection - update your existing isEndingConversation function
 const isEndingConversation = useCallback((text, currentState) => {
   // If we're not in a conversation, we can't end one
   if (!currentState.currentCharacter) return false;
 
   const lowerText = text.toLowerCase();
   
-  // Expanded list of goodbye phrases
+  // Comprehensive list of goodbye phrases
   const goodbyePhrases = [
-    'goodbye', 'bye', 'see you', 'thanks', 'thank you',
-    'that will be all', 'that is all', 'that\'s all',
-    'if we need', 'we will find you', 'find you later',
-    'contact you', 'that helps', 'let\'s go', 'let\'s leave',
-    'i should go', 'need to go', 'moving on', 'leave now',
-    'go back', 'return to', 'head back', 'enough for now'
+    'goodbye', 'bye', 'see you', 'thanks', 'thank you', 'later',
+    'that will be all', 'that is all', 'that\'s all', 'that\'s it',
+    'if we need', 'we will find you', 'find you later', 'catch you later',
+    'contact you', 'that helps', 'let\'s go', 'let\'s leave', 'appreciate it',
+    'i should go', 'need to go', 'moving on', 'leave now', 'gotta go',
+    'go back', 'return to', 'head back', 'enough for now', 'that should do it',
+    'wrap this up', 'done here', 'finished here', 'all set', 'all done'
   ];
   
   // Movement phrases that indicate leaving
   const movementPhrases = [
     'go back to', 'return to', 'leave', 'exit', 'head to',
-    'go to the', 'check out', 'investigate', 'examine'
+    'go to the', 'check out', 'investigate', 'examine', 'visit',
+    'look at', 'search', 'head over to', 'check on', 'move to'
+  ];
+  
+  // Location references that indicate movement away
+  const locationReferences = [
+    'crime scene', 'apartment', 'station', 'lab', 'office', 
+    'hallway', 'bathroom', 'kitchen', 'bedroom', 'building'
+  ];
+  
+  // Transition to investigation phrases
+  const investigationPhrases = [
+    'let me check', 'i need to investigate', 'i should examine', 
+    'i want to look at', 'need to process', 'collect evidence',
+    'take a sample', 'photograph', 'document', 'analyze'
+  ];
+  
+  // Character comparison helper - are we redirecting to another character?
+  const otherCharacterMentioned = Object.keys(currentState.characters || {})
+    .filter(char => char !== currentState.currentCharacter)
+    .some(char => {
+      const lowerChar = char.toLowerCase();
+      return lowerText.includes(lowerChar) && 
+             (lowerText.includes('talk to') || 
+              lowerText.includes('ask') || 
+              lowerText.includes('interview') ||
+              lowerText.includes('speak with'));
+    });
+  
+  // Context-based ending signals
+  const contextualEndingPatterns = [
+    // Phrase that implies you've gotten what you need
+    { pattern: 'that\'s helpful', context: 'ANY' },
+    // Longer pauses might indicate conversation transitions
+    { pattern: '...', context: 'QUESTIONING' },
+    // If asking about evidence while talking to someone
+    { pattern: 'evidence', context: 'QUESTIONING' },
+    // After several exchanges, brief responses can signal ending
+    { pattern: '.', context: 'QUESTIONING', 
+      condition: () => currentState.characters[currentState.currentCharacter]?.visitCount > 2 && 
+                       lowerText.split(' ').length < 4 }
   ];
   
   // Check for explicit goodbyes
   const isGoodbye = goodbyePhrases.some(phrase => lowerText.includes(phrase));
   
   // Check for movement away from the conversation
-  const isMovingAway = currentState.currentCharacter && 
-                      movementPhrases.some(phrase => lowerText.includes(phrase)) &&
-                      !lowerText.includes(currentState.currentCharacter.toLowerCase());
+  const isMovingAway = (movementPhrases.some(phrase => lowerText.includes(phrase)) &&
+                        locationReferences.some(location => lowerText.includes(location)) &&
+                        !lowerText.includes(currentState.currentCharacter.toLowerCase()));
   
-  const isEnding = isGoodbye || isMovingAway;
+  // Check for transition to investigation
+  const isTransitioningToInvestigation = investigationPhrases.some(phrase => 
+    lowerText.includes(phrase)
+  );
   
-  console.log('🔍 Checking if ending conversation:', isEnding);
+  // Check for questions directed to another person (like Navarro)
+  const isRedirectingConversation = lowerText.includes('navarro') || 
+                                   (lowerText.includes('what do you think') && 
+                                   !lowerText.includes(currentState.currentCharacter.toLowerCase()));
+  
+  // Check for contextual ending patterns
+  const hasContextualEnding = contextualEndingPatterns.some(pattern => {
+    return lowerText.includes(pattern.pattern) && 
+           (pattern.context === 'ANY' || pattern.context === currentState.conversationPhase) &&
+           (!pattern.condition || pattern.condition());
+  });
+  
+  // Assess conversation fatigue - has this gone on for too long?
+  const conversationLength = currentState.characters[currentState.currentCharacter]?.lastDialogue?.timestamp
+    ? (currentClock() - currentState.characters[currentState.currentCharacter].lastDialogue.timestamp)
+    : 0;
+    
+  const hasConversationFatigue = conversationLength > 15; // If more than 15 minutes in-game time
+  
+  // New: Check if conversation feels complete based on topics
+  const relevantTopics = ['alibi', 'motive', 'witness', 'timing', 'weapon', 'relationships'];
+  const discussedImportantTopics = currentState.characters[currentState.currentCharacter]?.topicsDiscussed || [];
+  const hasDiscussedCriticalTopics = relevantTopics.every(topic => 
+    discussedImportantTopics.includes(topic)
+  );
+  
+  // Overall ending assessment
+  const isEnding = isGoodbye || 
+                  isMovingAway || 
+                  isRedirectingConversation || 
+                  isTransitioningToInvestigation ||
+                  otherCharacterMentioned ||
+                  hasContextualEnding ||
+                  (hasConversationFatigue && hasDiscussedCriticalTopics);
+  
+  // Detailed logging for debugging
+  console.log('🔍 Checking if ending conversation:', {
+    isEnding,
+    character: currentState.currentCharacter,
+    phase: currentState.conversationPhase,
+    isGoodbye,
+    isMovingAway,
+    isRedirectingConversation,
+    isTransitioningToInvestigation,
+    otherCharacterMentioned,
+    hasContextualEnding,
+    hasConversationFatigue,
+    hasDiscussedCriticalTopics
+  });
   
   return isEnding;
-}, []);
+  }, [timeElapsed, START_OF_DAY]); 
 
   // —— DERIVED NOTES STATE ——
   // Function to update detective thoughts based on game state
@@ -224,98 +663,458 @@ const isEndingConversation = useCallback((text, currentState) => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [msgs, showAccuseModal, showNotepad]);
 
-  const currentClock = () => START_OF_DAY + timeElapsed;
+
 
   // Helper function to detect character mentions in user input
-// Enhanced character mention detection
-function detectCharacterMention(text, currentState) {
-  const lowerText = text.toLowerCase();
-  console.log('🔍 Detecting character in:', lowerText);
 
-  // Create a more comprehensive detection system with character aliases
-  const characterAliases = {
-    'Marvin Lott': ['marvin', 'neighbor', 'neighbour', 'lott', 'the neighbor', 'next door'],
-    'Rachel Kim': ['rachel', 'kim', 'best friend', 'friend', 'mia\'s friend'],
-    'Jordan Valez': ['jordan', 'valez', 'ex', 'boyfriend', 'ex-boyfriend', 'ex boyfriend']
-  };
+// Add this conversation history tracking system to your codebase
+function trackConversationHistory(speaker, content, isQuestion, setState, gameState) {
+  if (!speaker || speaker === 'System') return;
   
-  // Check for exact character names first
-  for (const [character, aliases] of Object.entries(characterAliases)) {
-    // Direct reference to character
-    if (aliases.some(alias => lowerText.includes(alias))) {
-      console.log(`✅ Detected ${character} through alias`);
-      return character;
-    }
-  }
-  
-  // Action-based references (more contextual)
-  const actionPhrases = ['talk to', 'speak with', 'interview', 'ask', 'go to', 'visit', 'meet', 'find'];
-  
-  for (const [character, aliases] of Object.entries(characterAliases)) {
-    for (const phrase of actionPhrases) {
-      for (const alias of aliases) {
-        if (lowerText.includes(`${phrase} ${alias}`)) {
-          console.log(`✅ Detected intent to speak with ${character}`);
-          return character;
+  setState(prevState => {
+    // Skip if no current character (e.g., general game messages)
+    if (!prevState.currentCharacter && speaker !== 'Navarro') return prevState;
+    
+    // Determine which character we're tracking (speaker or current conversation partner)
+    const characterToTrack = (speaker === 'Navarro' || speaker === gameState.detectiveName) 
+      ? prevState.currentCharacter 
+      : speaker;
+    
+    if (!characterToTrack) return prevState;
+    
+    // Get existing character data or create default
+    const characterData = prevState.characters[characterToTrack] || {
+      history: [],
+      lastInteractionTime: null,
+      state: 'INITIAL',
+      topicsDiscussed: []
+    };
+    
+    // Analyze the content for significant elements
+    const analysis = analyzeDialogueContext(content, gameState);
+    
+    // Detect potential contradictions or inconsistencies
+    const contradictions = detectContradictions(
+      characterToTrack, 
+      content, 
+      analysis, 
+      characterData.history || []
+    );
+    
+    // Create the history entry
+    const historyEntry = {
+      timestamp: gameState.currentTime,
+      speaker: speaker,
+      content: content,
+      isQuestion: isQuestion,
+      analysis: analysis,
+      contradictions: contradictions,
+      gameState: {
+        leads: gameState.leads || [],
+        evidence: gameState.evidence || [],
+        timeElapsed: gameState.timeElapsed || 0
+      }
+    };
+    
+    // Add history entry and maintain a reasonable history size (last 20 exchanges)
+    const updatedHistory = [...(characterData.history || []), historyEntry]
+      .slice(-20);
+    
+    // Return the updated state
+    return {
+      ...prevState,
+      characters: {
+        ...prevState.characters,
+        [characterToTrack]: {
+          ...characterData,
+          history: updatedHistory,
+          lastInteractionTime: gameState.currentTime,
+          contradictions: [
+            ...(characterData.contradictions || []),
+            ...contradictions
+          ]
         }
+      }
+    };
+  });
+}
+
+// Helper function to detect contradictions in statements
+function detectContradictions(character, content, analysis, history) {
+  const contradictions = [];
+  const lowerContent = content.toLowerCase();
+  
+  // Skip contradiction detection for the detective or Navarro
+  if (character === 'Navarro' || !character) return contradictions;
+  
+  // Simple time-based contradiction detection
+  if (lowerContent.includes('time') || 
+      lowerContent.includes('when') || 
+      analysis.topics.includes('timing')) {
+    
+    // Look for times mentioned in the current statement
+    const timePattern = /(\d{1,2})[:\.]?(\d{2})?\s*(am|pm|a\.m\.|p\.m\.)/gi;
+    const timeMatches = [...lowerContent.matchAll(timePattern)];
+    
+    // Check previous statements about time
+    const timeHistory = history.filter(entry => 
+      entry.analysis && 
+      (entry.analysis.topics.includes('timing') || 
+       entry.content.toLowerCase().match(timePattern))
+    );
+    
+    // If we found times in both current and previous statements, check for contradictions
+    if (timeMatches.length > 0 && timeHistory.length > 0) {
+      // This is a simplified check - in a real system, you'd parse and compare actual times
+      if (timeMatches[0][0] !== timeHistory[0].content.toLowerCase().match(timePattern)?.[0][0]) {
+        contradictions.push({
+          type: 'time_inconsistency',
+          currentStatement: content,
+          previousStatement: timeHistory[0].content,
+          detectionTime: new Date().toISOString()
+        });
       }
     }
   }
   
-  // Location-based references
-  if (lowerText.includes("neighbor's door") || lowerText.includes("next door")) {
-    console.log('✅ Detected Marvin Lott through location');
-    return 'Marvin Lott';
+  // Check for alibi contradictions
+  if (analysis.topics.includes('alibi')) {
+    const alibiHistory = history.filter(entry => 
+      entry.analysis && entry.analysis.topics.includes('alibi')
+    );
+    
+    if (alibiHistory.length > 0) {
+      // Simple keyword-based contradiction detection
+      const currentKeywords = extractKeywords(lowerContent);
+      const previousKeywords = extractKeywords(alibiHistory[0].content.toLowerCase());
+      
+      // Check for different location mentions
+      const locationWords = ['home', 'house', 'apartment', 'bar', 'restaurant', 'work', 'office'];
+      const currentLocations = currentKeywords.filter(word => locationWords.includes(word));
+      const previousLocations = previousKeywords.filter(word => locationWords.includes(word));
+      
+      if (currentLocations.length > 0 && 
+          previousLocations.length > 0 && 
+          !currentLocations.some(loc => previousLocations.includes(loc))) {
+        contradictions.push({
+          type: 'alibi_inconsistency',
+          currentStatement: content,
+          previousStatement: alibiHistory[0].content,
+          detectionTime: new Date().toISOString()
+        });
+      }
+    }
   }
   
-  // If already in conversation with a character and not ending it
-  if (currentState.currentCharacter && 
-      currentState.conversationPhase !== 'CONCLUDING' &&
-      !isEndingConversation(text, currentState)) {
-    console.log('✅ Continuing conversation with', currentState.currentCharacter);
-    return currentState.currentCharacter;
+  // Check for relationship contradictions
+  if (analysis.topics.includes('relationships')) {
+    const relationshipHistory = history.filter(entry => 
+      entry.analysis && entry.analysis.topics.includes('relationships')
+    );
+    
+    if (relationshipHistory.length > 0) {
+      // Check for sentiment shifts about the victim
+      const currentSentiment = getSentimentAboutVictim(lowerContent);
+      const previousSentiment = getSentimentAboutVictim(relationshipHistory[0].content.toLowerCase());
+      
+      if (currentSentiment && previousSentiment && 
+          currentSentiment !== previousSentiment && 
+          (currentSentiment === 'negative' || previousSentiment === 'negative')) {
+        contradictions.push({
+          type: 'relationship_inconsistency',
+          currentStatement: content,
+          previousStatement: relationshipHistory[0].content,
+          detectionTime: new Date().toISOString()
+        });
+      }
+    }
   }
   
-  console.log('❌ No character detected');
+  return contradictions;
+}
+
+// Helper function to extract keywords from text
+function extractKeywords(text) {
+  // Remove common words and punctuation
+  const stopWords = ['i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 
+    'you', 'your', 'yours', 'yourself', 'yourselves', 'he', 'him', 'his', 
+    'himself', 'she', 'her', 'hers', 'herself', 'it', 'its', 'itself', 
+    'they', 'them', 'their', 'theirs', 'themselves', 'what', 'which', 
+    'who', 'whom', 'this', 'that', 'these', 'those', 'am', 'is', 'are', 
+    'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having', 
+    'do', 'does', 'did', 'doing', 'a', 'an', 'the', 'and', 'but', 'if', 
+    'or', 'because', 'as', 'until', 'while', 'of', 'at', 'by', 'for', 
+    'with', 'about', 'against', 'between', 'into', 'through', 'during', 
+    'before', 'after', 'above', 'below', 'to', 'from', 'up', 'down', 'in', 
+    'out', 'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 
+    'here', 'there', 'when', 'where', 'why', 'how', 'all', 'any', 'both', 
+    'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 
+    'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 's', 't', 
+    'can', 'will', 'just', 'don', 'should', 'now'];
+  
+  const words = text
+    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '')
+    .toLowerCase()
+    .split(/\s+/);
+  
+  return words.filter(word => !stopWords.includes(word));
+}
+
+// Helper to detect sentiment about the victim
+function getSentimentAboutVictim(text) {
+  const positivePhrases = [
+    'good friend', 'liked her', 'love her', 'great person', 'wonderful', 
+    'miss her', 'close', 'helped me', 'kind', 'sweet', 'caring'
+  ];
+  
+  const negativePhrases = [
+    'problem', 'issues', 'difficult', 'annoying', 'fight', 'argument', 
+    'angry', 'upset', 'mad at', 'hate', 'dislike', 'trouble', 'bad'
+  ];
+  
+  if (positivePhrases.some(phrase => text.includes(phrase))) {
+    return 'positive';
+  }
+  
+  if (negativePhrases.some(phrase => text.includes(phrase))) {
+    return 'negative';
+  }
+  
+  return 'neutral';
+}
+// Enhanced character mention detection
+// Enhanced character mention detection - update your existing function
+function detectCharacterMention(text, currentState, gameState) {
+  const lowerText = text.toLowerCase();
+  console.log('🔍 Detecting character in:', lowerText);
+
+  // Comprehensive character alias mapping with weighted scores
+  const characterAliases = {
+    'Marvin Lott': {
+      direct: ['marvin', 'lott', 'mr. lott', 'mr lott'],
+      roles: ['neighbor', 'neighbour', 'the neighbor', 'guy next door', 'man next door', 'witness'],
+      descriptive: ['nervous guy', 'man who called', 'caller', 'who reported'],
+      locations: ['next door', 'apartment 2b', 'neighboring apartment']
+    },
+    'Rachel Kim': {
+      direct: ['rachel', 'kim', 'ms. kim', 'ms kim', 'miss kim'],
+      roles: ['best friend', 'friend', 'roommate', 'close friend', 'bestie', 'bff'],
+      descriptive: ['asian woman', 'mia\'s friend', 'woman who found body', 'finder'],
+      locations: ['friend\'s place', 'kim residence', 'rachel\'s apartment']
+    },
+    'Jordan Valez': {
+      direct: ['jordan', 'valez', 'mr. valez', 'mr valez'],
+      roles: ['ex', 'boyfriend', 'ex-boyfriend', 'former boyfriend', 'ex boyfriend'],
+      descriptive: ['jealous ex', 'angry ex', 'former lover', 'the ex'],
+      locations: ['jordan\'s apartment', 'ex\'s place', 'valez residence']
+    }
+  };
+  
+  // Contextual mention detection with scoring
+  const characterScores = {};
+  
+  // Initialize scores
+  Object.keys(characterAliases).forEach(char => {
+    characterScores[char] = 0;
+  });
+  
+  // Check direct name references (highest priority)
+  Object.entries(characterAliases).forEach(([character, aliases]) => {
+    aliases.direct.forEach(alias => {
+      if (lowerText.includes(alias)) {
+        characterScores[character] += 10;
+      }
+    });
+    
+    aliases.roles.forEach(alias => {
+      if (lowerText.includes(alias)) {
+        characterScores[character] += 5;
+      }
+    });
+    
+    aliases.descriptive.forEach(alias => {
+      if (lowerText.includes(alias)) {
+        characterScores[character] += 3;
+      }
+    });
+    
+    aliases.locations.forEach(alias => {
+      if (lowerText.includes(alias)) {
+        characterScores[character] += 4;
+      }
+    });
+  });
+  
+  // Action phrases detection with context
+  const actionPhrases = [
+    { phrase: 'talk to', weight: 8 },
+    { phrase: 'speak with', weight: 8 },
+    { phrase: 'interview', weight: 9 },
+    { phrase: 'ask', weight: 7 },
+    { phrase: 'go to', weight: 6 },
+    { phrase: 'visit', weight: 6 },
+    { phrase: 'meet', weight: 7 },
+    { phrase: 'find', weight: 5 },
+    { phrase: 'question', weight: 9 },
+    { phrase: 'interrogate', weight: 10 },
+    { phrase: 'see', weight: 4 },
+    { phrase: 'check on', weight: 5 }
+  ];
+  
+  // Check for action-character combinations
+  Object.entries(characterAliases).forEach(([character, aliases]) => {
+    // Combine all alias types for action detection
+    const allAliases = [
+      ...aliases.direct, 
+      ...aliases.roles, 
+      ...aliases.descriptive
+    ];
+    
+    actionPhrases.forEach(action => {
+      allAliases.forEach(alias => {
+        if (lowerText.includes(`${action.phrase} ${alias}`)) {
+          characterScores[character] += action.weight;
+        }
+      });
+    });
+  });
+  
+  // Context-based inference
+  if (currentState.conversationPhase !== 'NONE' && currentState.currentCharacter) {
+    // Continuing existing conversation
+    if (!isEndingConversation(text, currentState)) {
+      characterScores[currentState.currentCharacter] += 8;
+    }
+  }
+  
+  // Check for conversation history context
+  const recentTopics = currentState.globalTopics || [];
+  
+  // If recently discussed a character, boost their score
+  Object.keys(characterAliases).forEach(char => {
+    if (recentTopics.includes(`person-${char}`)) {
+      characterScores[char] += 2;
+    }
+  });
+  
+  // Check game state for contextual clues
+  if (gameState) {
+    // If at a character's location, boost their score
+    if (gameState.location === "Marvin's Apartment") {
+      characterScores["Marvin Lott"] += 6;
+    } else if (gameState.location === "Rachel's House") {
+      characterScores["Rachel Kim"] += 6;
+    }
+  }
+  
+  // Find the highest scoring character
+  let highestScore = 0;
+  let detectedCharacter = null;
+  
+  Object.entries(characterScores).forEach(([character, score]) => {
+    if (score > highestScore) {
+      highestScore = score;
+      detectedCharacter = character;
+    }
+  });
+  
+  // Only return a character if the score is significant
+  if (highestScore >= 5) {
+    console.log(`✅ Detected ${detectedCharacter} with score ${highestScore}`);
+    return detectedCharacter;
+  }
+  
+  console.log('❌ No character detected with significant confidence');
   return null;
 }
 
-  // Helper function to extract potential topics from dialogue
-  function extractTopics(text) {
-    const topics = [];
-    const lowerText = text.toLowerCase();
-    
-    // Check for common topics in the dialogue
-    if (lowerText.includes('scream') || lowerText.includes('heard')) {
-      topics.push('noise');
+// Enhanced conversation ending detection
+// Enhanced conversation ending detection - UPDATE the existing function body
+const enhancedConversationEndingDetection = useCallback((text, currentState) => {
+  // If we're not in a conversation, we can't end one
+  if (!currentState.currentCharacter) return false;
+
+  const lowerText = text.toLowerCase();
+  
+  // Comprehensive list of goodbye phrases
+  const goodbyePhrases = [
+    'goodbye', 'bye', 'see you', 'thanks', 'thank you', 'later',
+    'that will be all', 'that is all', 'that\'s all', 'that\'s it',
+    'if we need', 'we will find you', 'find you later', 'catch you later',
+    'contact you', 'that helps', 'let\'s go', 'let\'s leave', 'appreciate it',
+    'i should go', 'need to go', 'moving on', 'leave now', 'gotta go',
+    'go back', 'return to', 'head back', 'enough for now', 'that should do it',
+    'wrap this up', 'done here', 'finished here', 'all set', 'all done'
+  ];
+  
+  // Movement phrases that indicate leaving
+  const movementPhrases = [
+    'go back to', 'return to', 'leave', 'exit', 'head to',
+    'go to the', 'check out', 'investigate', 'examine', 'visit',
+    'look at', 'search', 'head over to', 'check on', 'move to'
+  ];
+  
+  // Location references that indicate movement away
+  const locationReferences = [
+    'crime scene', 'apartment', 'station', 'lab', 'office', 
+    'hallway', 'bathroom', 'kitchen', 'bedroom', 'building'
+  ];
+  
+  // Check for explicit goodbyes
+  const isGoodbye = goodbyePhrases.some(phrase => lowerText.includes(phrase));
+  
+  // Check for movement away from the conversation
+  const isMovingAway = currentState.currentCharacter && 
+                      (movementPhrases.some(phrase => lowerText.includes(phrase)) &&
+                      locationReferences.some(location => lowerText.includes(location)) &&
+                      !lowerText.includes(currentState.currentCharacter.toLowerCase()));
+  
+  // Check for questions directed to another person (like Navarro)
+  const isRedirectingConversation = lowerText.includes('navarro') || 
+                                   (lowerText.includes('what do you think') && 
+                                   !lowerText.includes(currentState.currentCharacter.toLowerCase()));
+  
+  const isEnding = isGoodbye || isMovingAway || isRedirectingConversation;
+  
+  console.log('🔍 Checking if ending conversation:', isEnding, {
+    isGoodbye,
+    isMovingAway,
+    isRedirectingConversation
+  });
+  
+  return isEnding;
+}, []);
+
+// Enhanced topic extraction function
+function extractTopics(text) {
+  const topics = [];
+  const lowerText = text.toLowerCase();
+  
+  // Comprehensive topic detection for investigation
+  const topicPatterns = {
+    'noise': ['scream', 'heard', 'sound', 'noise', 'loud', 'yell', 'shout', 'bang'],
+    'timing': ['time', 'clock', 'when', 'hour', 'minute', 'morning', 'night', 'yesterday', 'today', 'evening', 'afternoon', 'o\'clock'],
+    'victim': ['mia', 'victim', 'rodriguez', 'dead', 'body', 'murdered', 'girl', 'woman', 'deceased'],
+    'relationships': ['relationship', 'friend', 'knew', 'close', 'dating', 'partner', 'boyfriend', 'girlfriend', 'lover', 'married', 'together', 'roommate'],
+    'witness': ['see', 'saw', 'witness', 'noticed', 'observed', 'spotted', 'watching', 'looked', 'glanced', 'viewed'],
+    'entry': ['door', 'window', 'entry', 'break-in', 'lock', 'key', 'forced', 'broke in', 'access', 'entered', 'entrance'],
+    'weapon': ['knife', 'weapon', 'stab', 'blood', 'blade', 'sharp', 'cut', 'wound', 'injury', 'kill', 'murdered', 'stabbing'],
+    'motive': ['why', 'reason', 'motive', 'angry', 'jealous', 'money', 'revenge', 'hate', 'fight', 'argument', 'dispute', 'grudge', 'threatened'],
+    'alibi': ['where', 'alibi', 'during', 'night of', 'when it happened', 'that night', 'doing', 'location', 'at the time', 'whereabouts'],
+    'background': ['history', 'past', 'background', 'previous', 'record', 'criminal', 'job', 'work', 'occupation', 'family', 'relatives', 'friends', 'social'],
+    'physical_evidence': ['fingerprint', 'dna', 'hair', 'fiber', 'footprint', 'evidence', 'trace', 'sample', 'forensic', 'item', 'belonging', 'found', 'collected']
+  };
+  
+  // Check for topic patterns in the dialogue
+  for (const [topic, keywords] of Object.entries(topicPatterns)) {
+    if (keywords.some(keyword => lowerText.includes(keyword))) {
+      topics.push(topic);
     }
-    
-    if (lowerText.includes('time') || lowerText.includes('clock') || lowerText.includes('when')) {
-      topics.push('timing');
-    }
-    
-    if (lowerText.includes('mia') || lowerText.includes('victim') || lowerText.includes('rodriguez')) {
-      topics.push('victim');
-    }
-    
-    if (lowerText.includes('relationship') || lowerText.includes('friend') || lowerText.includes('knew')) {
-      topics.push('relationships');
-    }
-    
-    if (lowerText.includes('see') || lowerText.includes('saw') || lowerText.includes('witness')) {
-      topics.push('witness');
-    }
-    
-    if (lowerText.includes('door') || lowerText.includes('window') || lowerText.includes('entry')) {
-      topics.push('entry');
-    }
-    
-    if (lowerText.includes('knife') || lowerText.includes('weapon') || lowerText.includes('stab')) {
-      topics.push('weapon');
-    }
-    
-    return topics;
   }
+  
+  console.log('📋 Extracted topics:', topics);
+  return topics;
+}
 
 function isGeneralInvestigativeAction(text) {
   const lowerText = text.toLowerCase();
@@ -524,8 +1323,7 @@ function isGeneralInvestigativeAction(text) {
   };
 
     // —— PROXY CALL ——
-// Replace the existing sendMessage function with this implementation
-
+//send message
 const sendMessage = async () => {
   if (!input.trim()) return;
   
@@ -537,51 +1335,98 @@ const sendMessage = async () => {
   const pendingAction = conversationState.pendingAction;
   
   // Check if the message is ending a conversation
-  const isEnding = isEndingConversation(input, conversationState);
+  const isEnding = enhancedConversationEndingDetection(input, conversationState);
   
   // Check if starting a new conversation with a character
-  const mentionedCharacter = detectCharacterMention(input, conversationState);
-  
-  // Update conversation state before sending request
-  if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
-    // Starting conversation with new character
-    setConversationState(prev => ({
-      ...prev,
-      currentCharacter: mentionedCharacter,
-      pendingAction: 'MOVE_TO_CHARACTER',
-      conversationPhase: 'GREETING',
-      characters: {
-        ...prev.characters,
-        [mentionedCharacter]: {
-          ...(prev.characters[mentionedCharacter] || {}),
-          state: prev.characters[mentionedCharacter]?.state === 'INITIAL' ? 'RETURNING' : 'INITIAL'
-        }
-      }
-    }));
-  } else if (currentCharacter && !isEnding) {
-    // Continuing conversation with current character
-    setConversationState(prev => ({
-      ...prev,
-      pendingAction: 'CONTINUE_CONVERSATION',
-      conversationPhase: 'QUESTIONING'
-    }));
-  } else if (currentCharacter && isEnding) {
-    // Ending conversation
-    setConversationState(prev => ({
-      ...prev,
-      pendingAction: 'END_CONVERSATION',
-      conversationPhase: 'CONCLUDING'
-    }));
-  } else if (input.toLowerCase().includes('navarro') || 
-             input.toLowerCase().includes('partner') || 
-             input.toLowerCase().includes('what do you think')) {
-    // Asking Navarro directly
-    setConversationState(prev => ({
-      ...prev,
-      pendingAction: 'ASK_NAVARRO',
-      conversationPhase: 'NONE'
-    }));
+  const mentionedCharacter = detectCharacterMention(
+  input, 
+  conversationState,
+  {
+    location: LOCATION,
+    time: currentClock(),
+    evidence: evidence,
+    leads: leads
   }
+);
+  
+
+// Update conversation state before sending request
+if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
+  // Starting conversation with new character - handle scene transition
+  handleSceneTransition(
+    currentCharacter,
+    mentionedCharacter,
+    'MOVE_TO_CHARACTER',
+    setConversationState,
+    {
+      currentTime: currentClock(),
+      setMsgs,
+      setTimeElapsed,
+      setTimeRemaining,
+      conversationState
+    }
+  );
+} else if (currentCharacter && isEnding) {
+  // Ending conversation - handle scene transition
+  handleSceneTransition(
+    currentCharacter,
+    null,
+    'END_CONVERSATION',
+    setConversationState,
+    {
+      currentTime: currentClock(),
+      setMsgs,
+      setTimeElapsed,
+      setTimeRemaining,
+      conversationState
+    }
+  );
+  
+  // Set conversation state to reflect the conclusion
+  setConversationStateWithValidation(prev => ({
+    ...prev,
+    pendingAction: 'END_CONVERSATION',
+    conversationPhase: 'CONCLUDING'
+  }));
+} else if (currentCharacter && !isEnding) {
+  // Continuing conversation with current character
+  setConversationStateWithValidation(prev => ({
+    ...prev,
+    pendingAction: 'CONTINUE_CONVERSATION',
+    conversationPhase: 'QUESTIONING'
+  }));
+} else if (isGeneralInvestigativeAction(input)) {
+  // Transitioning to investigation mode
+  handleSceneTransition(
+    currentCharacter,
+    null,
+    'TRANSITION_TO_INVESTIGATION',
+    setConversationState,
+    {
+      currentTime: currentClock(),
+      setMsgs,
+      setTimeElapsed,
+      setTimeRemaining,
+      conversationState
+    }
+  );
+  
+  setConversationStateWithValidation(prev => ({
+    ...prev,
+    currentCharacter: null,
+    pendingAction: 'INVESTIGATE',
+    conversationPhase: 'NONE'
+  }));
+} else if (input.toLowerCase().includes('navarro') || 
+           input.toLowerCase().includes('partner') || 
+           input.toLowerCase().includes('what do you think')) {
+  // Asking Navarro directly
+  setConversationStateWithValidation(prev => ({
+    ...prev,
+    pendingAction: 'ASK_NAVARRO',
+    conversationPhase: 'NONE'
+  }));
+}
   
   // Clear input field
   setInput('');
@@ -595,7 +1440,17 @@ try {
   ? {
       character: currentCharacter,
       state: conversationState.characters[currentCharacter]?.state || 'INITIAL',
-      topicsDiscussed: conversationState.characters[currentCharacter]?.topicsDiscussed || []
+      topicsDiscussed: conversationState.characters[currentCharacter]?.topicsDiscussed || [],
+      visitCount: conversationState.characters[currentCharacter]?.visitCount || 0,
+      mood: conversationState.characters[currentCharacter]?.mood || 'neutral',
+      suspicionLevel: conversationState.characters[currentCharacter]?.suspicionLevel || 0,
+      // Add conversation history
+      recentHistory: getFormattedHistory(
+        conversationState.characters[currentCharacter]?.history || [], 
+        5 // Include last 5 exchanges
+      ),
+      // Add detected contradictions
+      contradictions: conversationState.characters[currentCharacter]?.contradictions || []
     }
   : null;
 
@@ -676,13 +1531,422 @@ try {
     
     // Add the message with validated speaker
     setMsgs(m => [...m, { speaker: speaker, content: obj.text }]);
+
+    // Add this right after to track the conversation:
+trackConversationHistory(
+  speaker, 
+  obj.text, 
+  // Detect if this was a response to a question
+  input.includes('?') || 
+    input.toLowerCase().startsWith('tell me') || 
+    input.toLowerCase().startsWith('what'),
+  setConversationState,
+  {
+    currentTime: fmt(currentClock()),
+    timeElapsed: timeElapsed,
+    detectiveName: detectiveName,
+    evidence: evidence,
+    leads: leads
+  }
+);
+// Helper function to format conversation history for the AI
+function getFormattedHistory(history, count) {
+  if (!history || history.length === 0) return [];
+  
+  // Get the most recent exchanges
+  const recentHistory = history.slice(-count);
+  
+  // Format them for inclusion in the AI context
+  return recentHistory.map(entry => ({
+    timestamp: entry.timestamp,
+    speaker: entry.speaker,
+    text: entry.content,
+    topics: entry.analysis?.topics || [],
+    emotion: entry.analysis?.emotionalTone || 'neutral',
+    isQuestion: entry.isQuestion
+  }));
+}
+
+// Add these scene transition functions to your codebase
+function handleSceneTransition(fromCharacter, toCharacter, action, setState, gameState) {
+  console.log(`🎬 Scene transition: ${fromCharacter || 'none'} → ${toCharacter || 'none'} (${action})`);
+  
+  // Step 1: Conclude current conversation if applicable
+  if (fromCharacter) {
+    concludeConversation(fromCharacter, setState, gameState);
+  }
+  
+  // Step 2: Generate appropriate transition narrative
+  const transitionMessage = generateTransitionNarrative(fromCharacter, toCharacter, action, gameState);
+  
+  if (transitionMessage) {
+    // Add the transition message to the message list
+    gameState.setMsgs(msgs => [...msgs, { 
+      speaker: 'System', 
+      content: transitionMessage 
+    }]);
+  }
+  
+  // Step 3: If moving to a new character, prepare for that conversation
+  if (toCharacter && toCharacter !== fromCharacter) {
+    prepareNewConversation(toCharacter, setState, gameState);
+  }
+  
+  // Step 4: Apply any time costs for the transition
+  applyTransitionTimeCosts(fromCharacter, toCharacter, action, gameState);
+}
+
+// Helper to conclude the current conversation
+function concludeConversation(character, setState, gameState) {
+  setState(prevState => {
+    // Get character data
+    const characterData = prevState.characters[character] || {};
+    
+    // Mark conversation as concluded
+    return {
+      ...prevState,
+      conversationPhase: 'NONE',
+      currentCharacter: null,
+      characters: {
+        ...prevState.characters,
+        [character]: {
+          ...characterData,
+          lastInteractionTime: gameState.currentTime,
+          // Record how the conversation ended
+          conversationEndState: {
+            time: gameState.currentTime,
+            topics: characterData.topicsDiscussed || [],
+            mood: characterData.mood || 'neutral',
+            suspicionLevel: characterData.suspicionLevel || 0
+          }
+        }
+      }
+    };
+  });
+}
+
+// Helper to generate transition narrative
+function generateTransitionNarrative(fromCharacter, toCharacter, action, gameState) {
+  // Different narrative types based on the transition
+  if (action === 'END_CONVERSATION' && fromCharacter) {
+    // Ending a conversation
+    const timeOfDay = getTimeOfDay(gameState.currentTime);
+    const characterMood = gameState.conversationState.characters[fromCharacter]?.mood || 'neutral';
+    
+    const endingPhrases = {
+      'defensive': `*${fromCharacter} crosses their arms defensively as you wrap up the conversation.*`,
+      'nervous': `*${fromCharacter} fidgets nervously as you conclude your questioning.*`,
+      'friendly': `*${fromCharacter} nods understandingly as you prepare to leave.*`,
+      'suspicious': `*${fromCharacter} watches you carefully as you step away.*`,
+      'neutral': `*You conclude your conversation with ${fromCharacter}.*`
+    };
+    
+    return endingPhrases[characterMood] || endingPhrases.neutral;
+  } 
+  else if (action === 'MOVE_TO_CHARACTER' && toCharacter) {
+    // Moving to a new character
+    const isReturning = gameState.conversationState.characters[toCharacter]?.state === 'RETURNING';
+    
+    if (isReturning) {
+      return `*You return to continue your conversation with ${toCharacter}.*`;
+    } else {
+      const locationDescriptions = {
+        'Marvin Lott': `*You approach Marvin's apartment door and knock. After a moment, he answers.*`,
+        'Rachel Kim': `*You find Rachel waiting in the building lobby, her eyes red from crying.*`,
+        'Jordan Valez': `*You track down Jordan at his workplace, a small design firm downtown.*`
+      };
+      
+      return locationDescriptions[toCharacter] || `*You approach ${toCharacter} to begin your interview.*`;
+    }
+  }
+  else if (action === 'TRANSITION_TO_INVESTIGATION') {
+    // Returning to investigation mode
+    return `*You turn your attention back to examining the crime scene.*`;
+  }
+  
+  // Default transition
+  return null;
+}
+
+// Helper to prepare for a new conversation
+function prepareNewConversation(character, setState, gameState) {
+  setState(prevState => {
+    // Get existing character data or initialize
+    const characterData = prevState.characters[character] || {
+      state: 'INITIAL',
+      topicsDiscussed: [],
+      visitCount: 0,
+      mood: 'neutral',
+      suspicionLevel: 0
+    };
+    
+    // Determine if this is a returning visit
+    const isReturning = characterData.state === 'INITIAL' && characterData.visitCount > 0;
+    
+    // Prepare greeting phase
+    return {
+      ...prevState,
+      currentCharacter: character,
+      conversationPhase: 'GREETING',
+      pendingAction: null,
+      characters: {
+        ...prevState.characters,
+        [character]: {
+          ...characterData,
+          state: isReturning ? 'RETURNING' : 'INITIAL',
+          visitCount: characterData.visitCount + 1,
+          currentConversationStartTime: gameState.currentTime
+        }
+      }
+    };
+  });
+}
+
+// Helper to apply time costs for transitions
+function applyTransitionTimeCosts(fromCharacter, toCharacter, action, gameState) {
+  let timeCost = 0;
+  
+  // Different costs based on transition type
+  if (action === 'MOVE_TO_CHARACTER' && toCharacter) {
+    // Cost to travel to a new character
+    timeCost = 10; // 10 minutes to travel to a new location
+  } 
+  else if (action === 'END_CONVERSATION') {
+    // Small cost to conclude conversation
+    timeCost = 2; // 2 minutes to wrap up
+  }
+  
+  // Apply the time cost
+  if (timeCost > 0) {
+    gameState.setTimeElapsed(te => te + timeCost);
+    gameState.setTimeRemaining(tr => tr - timeCost);
+  }
+}
+
+// Helper to get time of day description
+function getTimeOfDay(timeMinutes) {
+  const hour = Math.floor(timeMinutes / 60);
+  
+  if (hour >= 5 && hour < 12) return 'morning';
+  if (hour >= 12 && hour < 17) return 'afternoon';
+  if (hour >= 17 && hour < 21) return 'evening';
+  return 'night';
+}
+
+    // Analyze and update conversation context for this dialogue
+updateConversationContext(
+  speaker, 
+  obj.text, 
+  {
+    currentTime: fmt(currentClock()),
+    detectiveName: detectiveName,
+    evidence: evidence,
+    leads: leads
+  }, 
+  setConversationState
+);
     
     // Update conversation topics if this is character dialogue
     if (speaker !== 'Navarro' && speaker === conversationState.currentCharacter) {
       // Extract potential topics from the dialogue
       const topics = extractTopics(obj.text);
+
+      // Enhanced topic detection system - place this after your existing extractTopics function
+function analyzeDialogueContext(text, gameState) {
+  const results = {
+    topics: [],
+    evidenceReferences: [],
+    characterReferences: [],
+    emotionalTone: 'neutral',
+    questionTypes: [],
+    accusationLevel: 0
+  };
+  
+  const lowerText = text.toLowerCase();
+  
+  // ---- 1. Extract basic topics using existing function ----
+  results.topics = extractTopics(text);
+  
+  // ---- 2. Detect evidence references ----
+  const evidenceKeywords = {
+    'stab-wound': ['stab', 'wound', 'knife mark', 'injury'],
+    'no-forced-entry': ['forced entry', 'break in', 'lock', 'window'],
+    'partial-cleaning': ['clean', 'wipe', 'blood', 'cleaned up'],
+    'missing-phone': ['phone', 'cell', 'mobile', 'call'],
+    'locked-door': ['locked', 'door', 'from inside', 'locked from'],
+    'bloodstain': ['blood', 'stain', 'pattern', 'spatter'],
+    'bracelet-charm': ['bracelet', 'charm', 'jewelry', 'accessory']
+  };
+  
+  // Check for evidence references
+  Object.entries(evidenceKeywords).forEach(([evidenceId, keywords]) => {
+    if (keywords.some(word => lowerText.includes(word))) {
+      results.evidenceReferences.push(evidenceId);
+    }
+  });
+  
+  // ---- 3. Detect character references ----
+  const characterKeywords = {
+    'Marvin Lott': ['marvin', 'lott', 'neighbor', 'neighbour'],
+    'Rachel Kim': ['rachel', 'kim', 'friend', 'best friend'],
+    'Jordan Valez': ['jordan', 'valez', 'boyfriend', 'ex']
+  };
+  
+  // Check for character references
+  Object.entries(characterKeywords).forEach(([character, keywords]) => {
+    if (keywords.some(word => lowerText.includes(word))) {
+      results.characterReferences.push(character);
+    }
+  });
+  
+  // ---- 4. Analyze emotional tone ----
+  const emotionKeywords = {
+    'angry': ['angry', 'mad', 'furious', 'outraged', 'upset', 'frustrated'],
+    'sad': ['sad', 'depressed', 'miserable', 'unhappy', 'heartbroken'],
+    'fearful': ['afraid', 'scared', 'frightened', 'terrified', 'worried', 'nervous'],
+    'confused': ['confused', 'puzzled', 'bewildered', 'unsure', 'uncertain'],
+    'suspicious': ['suspicious', 'doubt', 'questionable', 'fishy', 'skeptical'],
+    'sympathetic': ['sorry', 'sympathy', 'understand', 'condolences', 'feel for you'],
+    'threatening': ['threat', 'warning', 'careful', 'watch out', 'better not']
+  };
+  
+  // Determine emotional tone
+  let dominantEmotion = 'neutral';
+  let highestCount = 0;
+  
+  Object.entries(emotionKeywords).forEach(([emotion, keywords]) => {
+    const count = keywords.filter(word => lowerText.includes(word)).length;
+    if (count > highestCount) {
+      highestCount = count;
+      dominantEmotion = emotion;
+    }
+  });
+  
+  results.emotionalTone = highestCount > 0 ? dominantEmotion : 'neutral';
+  
+  // ---- 5. Detect question types ----
+  const questionPatterns = {
+    'timeline': ['when', 'what time', 'how long', 'what day', 'during'],
+    'location': ['where', 'which place', 'location', 'what room'],
+    'motivation': ['why', 'reason', 'motive', 'what for', 'purpose'],
+    'method': ['how', 'what way', 'manner', 'means', 'technique'],
+    'identity': ['who', 'which person', 'name', 'identify']
+  };
+  
+  // Check for question types
+  Object.entries(questionPatterns).forEach(([questionType, patterns]) => {
+    if (patterns.some(pattern => lowerText.includes(pattern) && 
+                               (lowerText.includes('?') || 
+                                lowerText.startsWith('tell me') ||
+                                lowerText.startsWith('i want to know')))) {
+      results.questionTypes.push(questionType);
+    }
+  });
+  
+  // ---- 6. Analyze accusation level ----
+  const accusationKeywords = [
+    'lie', 'lying', 'liar', 'truth', 'honest', 'hiding', 'suspicious',
+    'alibi', 'prove', 'guilty', 'innocent', 'killed', 'murder', 'murderer'
+  ];
+  
+  // Calculate accusation level (0-5)
+  const accusationCount = accusationKeywords.filter(word => lowerText.includes(word)).length;
+  results.accusationLevel = Math.min(5, accusationCount);
+  
+  // Include related evidence and characters in topics
+  results.topics = [...new Set([
+    ...results.topics,
+    ...results.evidenceReferences.map(ev => `evidence-${ev}`),
+    ...results.characterReferences.map(char => `person-${char}`)
+  ])];
+  
+  console.log('🔍 Dialogue analysis:', results);
+  return results;
+}
+
+// Add this function to update the global conversation context based on dialogue
+function updateConversationContext(speakerName, text, gameState, setConversationState) {
+  if (!speakerName || speakerName === 'System') return;
+  
+  // Analyze the dialogue
+  const analysis = analyzeDialogueContext(text, gameState);
+  
+  // Update the conversation state based on the analysis
+  setConversationStateWithValidation(prev => {
+    // Get existing character data or create new
+    const character = prev.characters[speakerName] || {
+      topicsDiscussed: [],
+      state: 'INITIAL',
+      relationshipLevel: 0,
+      suspicionLevel: 0,
+      mood: 'neutral',
+      emotionalResponses: {},
+      questionHistory: [],
+      contradictions: []
+    };
+    
+    // Track emotional responses
+    const emotionalResponses = {...character.emotionalResponses};
+    if (analysis.emotionalTone !== 'neutral') {
+      emotionalResponses[analysis.emotionalTone] = 
+        (emotionalResponses[analysis.emotionalTone] || 0) + 1;
+    }
+    
+    // Track question history
+    const questionHistory = [...(character.questionHistory || [])];
+    if (analysis.questionTypes.length > 0) {
+      questionHistory.push({
+        types: analysis.questionTypes,
+        timestamp: gameState.currentTime,
+        text: text
+      });
+    }
+    
+    // Update suspicion level based on accusation level
+    let suspicionLevel = character.suspicionLevel || 0;
+    if (analysis.accusationLevel > 0) {
+      // Increase suspicion if character is accused
+      if (speakerName !== 'Navarro' && speakerName !== gameState.detectiveName) {
+        suspicionLevel = Math.min(10, suspicionLevel + analysis.accusationLevel);
+      }
+    }
+    
+    // Update character's mood based on emotional tone
+    let mood = character.mood || 'neutral';
+    if (analysis.emotionalTone === 'threatening' || analysis.emotionalTone === 'angry') {
+      mood = 'defensive';
+    } else if (analysis.emotionalTone === 'sympathetic') {
+      mood = 'appreciative';
+    } else if (analysis.emotionalTone === 'suspicious') {
+      mood = 'nervous';
+    }
+    
+    // Return updated state
+    return {
+      ...prev,
+      globalTopics: [...new Set([...(prev.globalTopics || []), ...analysis.topics])],
+      characters: {
+        ...prev.characters,
+        [speakerName]: {
+          ...character,
+          topicsDiscussed: [...new Set([...character.topicsDiscussed, ...analysis.topics])],
+          emotionalResponses,
+          questionHistory,
+          suspicionLevel,
+          mood,
+          // Track the last analyzed dialogue
+          lastDialogue: {
+            text,
+            analysis,
+            timestamp: gameState.currentTime
+          }
+        }
+      }
+    };
+  });
+}
       
-      setConversationState(prev => ({
+      setConversationStateWithValidation(prev => ({
         ...prev,
         characters: {
           ...prev.characters,
@@ -726,16 +1990,33 @@ try {
   }, 500); // Short delay to ensure dialogue is processed first
   
   // Reset conversation state if character is exiting the conversation
-  if (conversationState.conversationPhase === 'CONCLUDING') {
-    setTimeout(() => {
-      setConversationState(prev => ({
-        ...prev,
-        currentCharacter: null,
-        pendingAction: null,
-        conversationPhase: 'NONE'
-      }));
-    }, 1000); // Small delay to let the goodbye message process
-  }
+  // Reset conversation state if character is exiting the conversation
+if (conversationState.conversationPhase === 'CONCLUDING') {
+  setTimeout(() => {
+    // Generate exit narrative if appropriate
+    const exitNarrative = generateTransitionNarrative(
+      conversationState.currentCharacter,
+      null,
+      'END_CONVERSATION',
+      {
+        currentTime: currentClock(),
+        conversationState
+      }
+    );
+    
+    if (exitNarrative) {
+      setMsgs(m => [...m, { speaker: 'System', content: exitNarrative }]);
+    }
+    
+    // Reset conversation state
+    setConversationStateWithValidation(prev => ({
+      ...prev,
+      currentCharacter: null,
+      pendingAction: null,
+      conversationPhase: 'NONE'
+    }));
+  }, 1000); // Small delay to let the goodbye message process
+}
 } catch (err) {
   setMsgs(m => [...m, { speaker: 'Navarro', content: `❌ ${err.message}` }]);
 } finally {
@@ -1221,6 +2502,7 @@ try {
           padding:16, zIndex:1000,
           color: '#000'
         }}>
+
           <h2 style={{ color: '#000' }}>🔍 Make Your Accusation</h2>
           <select 
             value={selectedSuspect} 
@@ -1247,6 +2529,53 @@ try {
           </button>
         </div>
       )}
+      {/* Debug Tools - only visible during development */}
+{process.env.NODE_ENV === 'development' && (
+  <div style={{ 
+    position: 'fixed', 
+    bottom: 10, 
+    right: 10, 
+    background: '#333', 
+    padding: 10,
+    borderRadius: 5,
+    zIndex: 1000
+  }}>
+    <div style={{ marginBottom: 5, fontWeight: 'bold', color: '#fff' }}>Debug Tools</div>
+    <button 
+      onClick={() => console.log('📊 Current Conversation State:', conversationState)}
+      style={{ marginRight: 5 }}
+    >
+      Log State
+    </button>
+    <button 
+      onClick={() => console.log('👥 Character Data:', 
+        conversationState.currentCharacter ? 
+        conversationState.characters[conversationState.currentCharacter] : 
+        'No active character'
+      )}
+      style={{ marginRight: 5 }}
+    >
+      Log Character
+    </button>
+    <button 
+      onClick={() => ConversationDebug.checkConversationConsistency(conversationState)}
+      style={{ marginRight: 5 }}
+    >
+      Check Consistency
+    </button>
+    <div style={{ marginTop: 5 }}>
+      <input 
+        type="checkbox" 
+        id="debugEnabled" 
+        checked={ConversationDebug.enabled}
+        onChange={e => ConversationDebug.enabled = e.target.checked} 
+      />
+      <label htmlFor="debugEnabled" style={{ color: '#fff', marginLeft: 5 }}>
+        Enable Logging
+      </label>
+    </div>
+  </div>
+)}
     </div>
   );
 }
