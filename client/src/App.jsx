@@ -1322,12 +1322,383 @@ function isGeneralInvestigativeAction(text) {
     setPendingNotifications([]);
   };
 
-    // —— PROXY CALL ——
+  // Enhanced topic detection system - place this after your existing extractTopics function
+  function analyzeDialogueContext(text, gameState) {
+    const results = {
+      topics: [],
+      evidenceReferences: [],
+      characterReferences: [],
+      emotionalTone: 'neutral',
+      questionTypes: [],
+      accusationLevel: 0
+    };
+    
+    const lowerText = text.toLowerCase();
+    
+    // ---- 1. Extract basic topics using existing function ----
+    results.topics = extractTopics(text);
+    
+    // ---- 2. Detect evidence references ----
+    const evidenceKeywords = {
+      'stab-wound': ['stab', 'wound', 'knife mark', 'injury'],
+      'no-forced-entry': ['forced entry', 'break in', 'lock', 'window'],
+      'partial-cleaning': ['clean', 'wipe', 'blood', 'cleaned up'],
+      'missing-phone': ['phone', 'cell', 'mobile', 'call'],
+      'locked-door': ['locked', 'door', 'from inside', 'locked from'],
+      'bloodstain': ['blood', 'stain', 'pattern', 'spatter'],
+      'bracelet-charm': ['bracelet', 'charm', 'jewelry', 'accessory']
+    };
+    
+    // Check for evidence references
+    Object.entries(evidenceKeywords).forEach(([evidenceId, keywords]) => {
+      if (keywords.some(word => lowerText.includes(word))) {
+        results.evidenceReferences.push(evidenceId);
+      }
+    });
+    
+    // ---- 3. Detect character references ----
+    const characterKeywords = {
+      'Marvin Lott': ['marvin', 'lott', 'neighbor', 'neighbour'],
+      'Rachel Kim': ['rachel', 'kim', 'friend', 'best friend'],
+      'Jordan Valez': ['jordan', 'valez', 'boyfriend', 'ex']
+    };
+    
+    // Check for character references
+    Object.entries(characterKeywords).forEach(([character, keywords]) => {
+      if (keywords.some(word => lowerText.includes(word))) {
+        results.characterReferences.push(character);
+      }
+    });
+    
+    // ---- 4. Analyze emotional tone ----
+    const emotionKeywords = {
+      'angry': ['angry', 'mad', 'furious', 'outraged', 'upset', 'frustrated'],
+      'sad': ['sad', 'depressed', 'miserable', 'unhappy', 'heartbroken'],
+      'fearful': ['afraid', 'scared', 'frightened', 'terrified', 'worried', 'nervous'],
+      'confused': ['confused', 'puzzled', 'bewildered', 'unsure', 'uncertain'],
+      'suspicious': ['suspicious', 'doubt', 'questionable', 'fishy', 'skeptical'],
+      'sympathetic': ['sorry', 'sympathy', 'understand', 'condolences', 'feel for you'],
+      'threatening': ['threat', 'warning', 'careful', 'watch out', 'better not']
+    };
+    
+    // Determine emotional tone
+    let dominantEmotion = 'neutral';
+    let highestCount = 0;
+    
+    Object.entries(emotionKeywords).forEach(([emotion, keywords]) => {
+      const count = keywords.filter(word => lowerText.includes(word)).length;
+      if (count > highestCount) {
+        highestCount = count;
+        dominantEmotion = emotion;
+      }
+    });
+    
+    results.emotionalTone = highestCount > 0 ? dominantEmotion : 'neutral';
+    
+    // ---- 5. Detect question types ----
+    const questionPatterns = {
+      'timeline': ['when', 'what time', 'how long', 'what day', 'during'],
+      'location': ['where', 'which place', 'location', 'what room'],
+      'motivation': ['why', 'reason', 'motive', 'what for', 'purpose'],
+      'method': ['how', 'what way', 'manner', 'means', 'technique'],
+      'identity': ['who', 'which person', 'name', 'identify']
+    };
+    
+    // Check for question types
+    Object.entries(questionPatterns).forEach(([questionType, patterns]) => {
+      if (patterns.some(pattern => lowerText.includes(pattern) && 
+                                 (lowerText.includes('?') || 
+                                  lowerText.startsWith('tell me') ||
+                                  lowerText.startsWith('i want to know')))) {
+        results.questionTypes.push(questionType);
+      }
+    });
+    
+    // ---- 6. Analyze accusation level ----
+    const accusationKeywords = [
+      'lie', 'lying', 'liar', 'truth', 'honest', 'hiding', 'suspicious',
+      'alibi', 'prove', 'guilty', 'innocent', 'killed', 'murder', 'murderer'
+    ];
+    
+    // Calculate accusation level (0-5)
+    const accusationCount = accusationKeywords.filter(word => lowerText.includes(word)).length;
+    results.accusationLevel = Math.min(5, accusationCount);
+    
+    // Include related evidence and characters in topics
+    results.topics = [...new Set([
+      ...results.topics,
+      ...results.evidenceReferences.map(ev => `evidence-${ev}`),
+      ...results.characterReferences.map(char => `person-${char}`)
+    ])];
+    
+    console.log('🔍 Dialogue analysis:', results);
+    return results;
+  }
+
+  // Add this function to update the global conversation context based on dialogue
+  function updateConversationContext(speakerName, text, gameState, setConversationState) {
+    if (!speakerName || speakerName === 'System') return;
+    
+    // Analyze the dialogue
+    const analysis = analyzeDialogueContext(text, gameState);
+    
+    // Update the conversation state based on the analysis
+    setConversationStateWithValidation(prev => {
+      // Get existing character data or create new
+      const character = prev.characters[speakerName] || {
+        topicsDiscussed: [],
+        state: 'INITIAL',
+        relationshipLevel: 0,
+        suspicionLevel: 0,
+        mood: 'neutral',
+        emotionalResponses: {},
+        questionHistory: [],
+        contradictions: []
+      };
+      
+      // Track emotional responses
+      const emotionalResponses = {...character.emotionalResponses};
+      if (analysis.emotionalTone !== 'neutral') {
+        emotionalResponses[analysis.emotionalTone] = 
+          (emotionalResponses[analysis.emotionalTone] || 0) + 1;
+      }
+      
+      // Track question history
+      const questionHistory = [...(character.questionHistory || [])];
+      if (analysis.questionTypes.length > 0) {
+        questionHistory.push({
+          types: analysis.questionTypes,
+          timestamp: gameState.currentTime,
+          text: text
+        });
+      }
+      
+      // Update suspicion level based on accusation level
+      let suspicionLevel = character.suspicionLevel || 0;
+      if (analysis.accusationLevel > 0) {
+        // Increase suspicion if character is accused
+        if (speakerName !== 'Navarro' && speakerName !== gameState.detectiveName) {
+          suspicionLevel = Math.min(10, suspicionLevel + analysis.accusationLevel);
+        }
+      }
+      
+      // Update character's mood based on emotional tone
+      let mood = character.mood || 'neutral';
+      if (analysis.emotionalTone === 'threatening' || analysis.emotionalTone === 'angry') {
+        mood = 'defensive';
+      } else if (analysis.emotionalTone === 'sympathetic') {
+        mood = 'appreciative';
+      } else if (analysis.emotionalTone === 'suspicious') {
+        mood = 'nervous';
+      }
+      
+      // Return updated state
+      return {
+        ...prev,
+        globalTopics: [...new Set([...(prev.globalTopics || []), ...analysis.topics])],
+        characters: {
+          ...prev.characters,
+          [speakerName]: {
+            ...character,
+            topicsDiscussed: [...new Set([...character.topicsDiscussed, ...analysis.topics])],
+            emotionalResponses,
+            questionHistory,
+            suspicionLevel,
+            mood,
+            // Track the last analyzed dialogue
+            lastDialogue: {
+              text,
+              analysis,
+              timestamp: gameState.currentTime
+            }
+          }
+        }
+      };
+    });
+  }
+
+  // Helper function to format conversation history for the AI
+  function getFormattedHistory(history, count) {
+    if (!history || history.length === 0) return [];
+    
+    // Get the most recent exchanges
+    const recentHistory = history.slice(-count);
+    
+    // Format them for inclusion in the AI context
+    return recentHistory.map(entry => ({
+      timestamp: entry.timestamp,
+      speaker: entry.speaker,
+      text: entry.content,
+      topics: entry.analysis?.topics || [],
+      emotion: entry.analysis?.emotionalTone || 'neutral',
+      isQuestion: entry.isQuestion
+    }));
+  }
+
+  // Add these scene transition functions to your codebase
+  function handleSceneTransition(fromCharacter, toCharacter, action, setState, gameState) {
+    console.log(`🎬 Scene transition: ${fromCharacter || 'none'} → ${toCharacter || 'none'} (${action})`);
+    
+    // Step 1: Conclude current conversation if applicable
+    if (fromCharacter) {
+      concludeConversation(fromCharacter, setState, gameState);
+    }
+    
+    // Step 2: Generate appropriate transition narrative
+    const transitionMessage = generateTransitionNarrative(fromCharacter, toCharacter, action, gameState);
+    
+    if (transitionMessage) {
+      // Add the transition message to the message list
+      gameState.setMsgs(msgs => [...msgs, { 
+        speaker: 'System', 
+        content: transitionMessage 
+      }]);
+    }
+    
+    // Step 3: If moving to a new character, prepare for that conversation
+    if (toCharacter && toCharacter !== fromCharacter) {
+      prepareNewConversation(toCharacter, setState, gameState);
+    }
+    
+    // Step 4: Apply any time costs for the transition
+    applyTransitionTimeCosts(fromCharacter, toCharacter, action, gameState);
+  }
+
+  // Helper to conclude the current conversation
+  function concludeConversation(character, setState, gameState) {
+    setState(prevState => {
+      // Get character data
+      const characterData = prevState.characters[character] || {};
+      
+      // Mark conversation as concluded
+      return {
+        ...prevState,
+        conversationPhase: 'NONE',
+        currentCharacter: null,
+        characters: {
+          ...prevState.characters,
+          [character]: {
+            ...characterData,
+            lastInteractionTime: gameState.currentTime,
+            // Record how the conversation ended
+            conversationEndState: {
+              time: gameState.currentTime,
+              topics: characterData.topicsDiscussed || [],
+              mood: characterData.mood || 'neutral',
+              suspicionLevel: characterData.suspicionLevel || 0
+            }
+          }
+        }
+      };
+    });
+  }
+
+  // Helper to generate transition narrative
+  function generateTransitionNarrative(fromCharacter, toCharacter, action, gameState) {
+    // Different narrative types based on the transition
+    if (action === 'END_CONVERSATION' && fromCharacter) {
+      // Ending a conversation
+      const timeOfDay = getTimeOfDay(gameState.currentTime);
+      const characterMood = gameState.conversationState?.characters[fromCharacter]?.mood || 'neutral';
+      
+      const endingPhrases = {
+        'defensive': `*${fromCharacter} crosses their arms defensively as you wrap up the conversation.*`,
+        'nervous': `*${fromCharacter} fidgets nervously as you conclude your questioning.*`,
+        'friendly': `*${fromCharacter} nods understandingly as you prepare to leave.*`,
+        'suspicious': `*${fromCharacter} watches you carefully as you step away.*`,
+        'neutral': `*You conclude your conversation with ${fromCharacter}.*`
+      };
+      
+      return endingPhrases[characterMood] || endingPhrases.neutral;
+    } 
+    else if (action === 'MOVE_TO_CHARACTER' && toCharacter) {
+      // Moving to a new character
+      const isReturning = gameState.conversationState?.characters[toCharacter]?.state === 'RETURNING';
+      
+      if (isReturning) {
+        return `*You return to continue your conversation with ${toCharacter}.*`;
+      } else {
+        const locationDescriptions = {
+          'Marvin Lott': `*You approach Marvin's apartment door and knock. After a moment, he answers.*`,
+          'Rachel Kim': `*You find Rachel waiting in the building lobby, her eyes red from crying.*`,
+          'Jordan Valez': `*You track down Jordan at his workplace, a small design firm downtown.*`
+        };
+        
+        return locationDescriptions[toCharacter] || `*You approach ${toCharacter} to begin your interview.*`;
+      }
+    }
+    else if (action === 'TRANSITION_TO_INVESTIGATION') {
+      // Returning to investigation mode
+      return `*You turn your attention back to examining the crime scene.*`;
+    }
+    
+    // Default transition
+    return null;
+  }
+
+  // Helper to prepare for a new conversation
+  function prepareNewConversation(character, setState, gameState) {
+    setState(prevState => {
+      // Get existing character data or initialize
+      const characterData = prevState.characters[character] || {
+        state: 'INITIAL',
+        topicsDiscussed: [],
+        visitCount: 0,
+        mood: 'neutral',
+        suspicionLevel: 0
+      };
+      
+      // Determine if this is a returning visit
+      const isReturning = characterData.state === 'INITIAL' && characterData.visitCount > 0;
+      
+      // Prepare greeting phase
+      return {
+        ...prevState,
+        currentCharacter: character,
+        conversationPhase: 'GREETING',
+        pendingAction: null,
+        characters: {
+          ...prevState.characters,
+          [character]: {
+            ...characterData,
+            state: isReturning ? 'RETURNING' : 'INITIAL',
+            visitCount: characterData.visitCount + 1,
+            currentConversationStartTime: gameState.currentTime
+          }
+        }
+      };
+    });
+  }
+
+  // Helper to apply time costs for transitions
+  function applyTransitionTimeCosts(fromCharacter, toCharacter, action, gameState) {
+    let timeCost = 0;
+    
+    // Different costs based on transition type
+    if (action === 'MOVE_TO_CHARACTER' && toCharacter) {
+      // Cost to travel to a new character
+      timeCost = 10; // 10 minutes to travel to a new location
+    } 
+    else if (action === 'END_CONVERSATION') {
+      // Small cost to conclude conversation
+      timeCost = 2; // 2 minutes to wrap up
+    }
+    
+    // Apply the time cost
+    if (timeCost > 0) {
+      gameState.setTimeElapsed(te => te + timeCost);
+      gameState.setTimeRemaining(tr => tr - timeCost);
+    }
+  }
+
+  // —— PROXY CALL ——
 //send message
 const sendMessage = async () => {
   if (!input.trim()) return;
   
-  setMsgs(m => [...m, { speaker: detectiveName, content: input }]);
+  const actionText = input; // Define actionText at the start
+  
+  setMsgs(m => [...m, { speaker: detectiveName, content: actionText }]);
   setLoading(true);
   
   // Extract current character and state from conversationState
@@ -1335,37 +1706,43 @@ const sendMessage = async () => {
   const pendingAction = conversationState.pendingAction;
   
   // Check if the message is ending a conversation
-  const isEnding = enhancedConversationEndingDetection(input, conversationState);
+  const isEnding = enhancedConversationEndingDetection(actionText, conversationState);
   
   // Check if starting a new conversation with a character
   const mentionedCharacter = detectCharacterMention(
-  input, 
-  conversationState,
-  {
-    location: LOCATION,
-    time: currentClock(),
-    evidence: evidence,
-    leads: leads
-  }
-);
-  
+    actionText, 
+    conversationState,
+    {
+      location: LOCATION,
+      time: currentClock(),
+      evidence: evidence,
+      leads: leads
+    }
+  );
 
 // Update conversation state before sending request
 if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
-  // Starting conversation with new character - handle scene transition
-  handleSceneTransition(
-    currentCharacter,
-    mentionedCharacter,
-    'MOVE_TO_CHARACTER',
-    setConversationState,
-    {
-      currentTime: currentClock(),
-      setMsgs,
-      setTimeElapsed,
-      setTimeRemaining,
-      conversationState
-    }
-  );
+  // First add Navarro's affirmation
+  const affirmation = getNavarroAffirmation(actionText);
+  setMsgs(m => [...m, { speaker: 'Navarro', content: affirmation }]);
+  
+  // Short delay before transitioning to allow Navarro's affirmation to be seen
+  setTimeout(() => {
+    // Starting conversation with new character - handle scene transition
+    handleSceneTransition(
+      currentCharacter,
+      mentionedCharacter,
+      'MOVE_TO_CHARACTER',
+      setConversationState,
+      {
+        currentTime: currentClock(),
+        setMsgs,
+        setTimeElapsed,
+        setTimeRemaining,
+        conversationState
+      }
+    );
+  }, 500);
 } else if (currentCharacter && isEnding) {
   // Ending conversation - handle scene transition
   handleSceneTransition(
@@ -1428,600 +1805,276 @@ if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
   }));
 }
   
-  // Clear input field
-  setInput('');
-  
-  const actionText = input;
-  
   // This code replaces the try/catch block in the sendMessage function
-
-try {
-  const conversationContext = currentCharacter
-  ? {
-      character: currentCharacter,
-      state: conversationState.characters[currentCharacter]?.state || 'INITIAL',
-      topicsDiscussed: conversationState.characters[currentCharacter]?.topicsDiscussed || [],
-      visitCount: conversationState.characters[currentCharacter]?.visitCount || 0,
-      mood: conversationState.characters[currentCharacter]?.mood || 'neutral',
-      suspicionLevel: conversationState.characters[currentCharacter]?.suspicionLevel || 0,
-      // Add conversation history
-      recentHistory: getFormattedHistory(
-        conversationState.characters[currentCharacter]?.history || [], 
-        5 // Include last 5 exchanges
-      ),
-      // Add detected contradictions
-      contradictions: conversationState.characters[currentCharacter]?.contradictions || []
-    }
-  : null;
-
-  console.log('📤 Sending to proxy with calculated values:', {
-    currentCharacter: mentionedCharacter || currentCharacter,
-    pendingAction: conversationState.pendingAction
-  });
-
-  const history = [...msgs, { speaker: detectiveName, content: actionText }].map(m => ({
-    role: m.speaker === 'System' ? 'system'
-        : m.speaker === detectiveName ? 'user'
-        : 'assistant',
-    content: m.content
-  }));
-  
-  const res = await fetch('http://localhost:3001/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messages: history,
-      gameState: {
-        currentTime: fmt(currentClock()),
-        timeRemaining: fmt(timeRemaining),
-        location: LOCATION,
-        mode,
-        evidence: evidence,
-        leads: leads,
-        detectiveName,
-        conversation: conversationContext,
-        pendingAction: conversationState.pendingAction,
-        currentCharacter: mentionedCharacter || currentCharacter
+  try {
+    const conversationContext = currentCharacter
+    ? {
+        character: currentCharacter,
+        state: conversationState.characters[currentCharacter]?.state || 'INITIAL',
+        topicsDiscussed: conversationState.characters[currentCharacter]?.topicsDiscussed || [],
+        visitCount: conversationState.characters[currentCharacter]?.visitCount || 0,
+        mood: conversationState.characters[currentCharacter]?.mood || 'neutral',
+        suspicionLevel: conversationState.characters[currentCharacter]?.suspicionLevel || 0,
+        // Add conversation history
+        recentHistory: getFormattedHistory(
+          conversationState.characters[currentCharacter]?.history || [], 
+          5 // Include last 5 exchanges
+        ),
+        // Add detected contradictions
+        contradictions: conversationState.characters[currentCharacter]?.contradictions || []
       }
-    }),
-  });
-  
-  const { text } = await res.json();
+    : null;
 
-  // —— DEBUG LOGS ——
-  const lines = text.trim().split(/\r?\n/);
-  const parsed = lines
-    .map(l => { try { return JSON.parse(l) } catch { return null } })
-    .filter(o => o && (o.type === 'stage' || o.type === 'dialogue'));
+    console.log('📤 Sending to proxy with calculated values:', {
+      currentCharacter: mentionedCharacter || currentCharacter,
+      pendingAction: conversationState.pendingAction
+    });
 
-  console.log('💬 RAW STREAM LINES:', lines);
-  console.log('💬 PARSED OBJECTS:', parsed);
-
-  // Process responses in the correct order
-  const stageDirections = parsed.filter(obj => obj.type === 'stage');
-  const dialogueResponses = parsed.filter(obj => obj.type === 'dialogue');
-  
-  // First add stage directions
-  for (const obj of stageDirections) {
-    setMsgs(m => [...m, { speaker: 'System', content: `*${obj.description}*` }]);
-  }
-  
-  // Then add dialogue responses
-  for (const obj of dialogueResponses) {
-    // Validate the speaker matches our expected conversation partner
-    let speaker = obj.speaker;
-    
-    // Enforce conversation state - if we're in a conversation with a character
-    // and we get dialogue that's not from that character or Navarro, fix it
-    if (
-      conversationState.currentCharacter && 
-      speaker !== conversationState.currentCharacter && 
-      speaker !== 'Navarro' && 
-      conversationState.pendingAction !== 'ASK_NAVARRO'
-    ) {
-      console.warn(`⚠️ Speaker mismatch! Expected ${conversationState.currentCharacter}, got ${speaker}. Fixing.`);
-      speaker = conversationState.currentCharacter;
-    }
-    
-    // If we're asking Navarro specifically, enforce that the response is from him
-    if (conversationState.pendingAction === 'ASK_NAVARRO' && speaker !== 'Navarro') {
-      console.warn(`⚠️ Speaker mismatch! Expected Navarro for ASK_NAVARRO action, got ${speaker}. Fixing.`);
-      speaker = 'Navarro';
-    }
-    
-    // Add the message with validated speaker
-    setMsgs(m => [...m, { speaker: speaker, content: obj.text }]);
-
-    // Add this right after to track the conversation:
-trackConversationHistory(
-  speaker, 
-  obj.text, 
-  // Detect if this was a response to a question
-  input.includes('?') || 
-    input.toLowerCase().startsWith('tell me') || 
-    input.toLowerCase().startsWith('what'),
-  setConversationState,
-  {
-    currentTime: fmt(currentClock()),
-    timeElapsed: timeElapsed,
-    detectiveName: detectiveName,
-    evidence: evidence,
-    leads: leads
-  }
-);
-// Helper function to format conversation history for the AI
-function getFormattedHistory(history, count) {
-  if (!history || history.length === 0) return [];
-  
-  // Get the most recent exchanges
-  const recentHistory = history.slice(-count);
-  
-  // Format them for inclusion in the AI context
-  return recentHistory.map(entry => ({
-    timestamp: entry.timestamp,
-    speaker: entry.speaker,
-    text: entry.content,
-    topics: entry.analysis?.topics || [],
-    emotion: entry.analysis?.emotionalTone || 'neutral',
-    isQuestion: entry.isQuestion
-  }));
-}
-
-// Add these scene transition functions to your codebase
-function handleSceneTransition(fromCharacter, toCharacter, action, setState, gameState) {
-  console.log(`🎬 Scene transition: ${fromCharacter || 'none'} → ${toCharacter || 'none'} (${action})`);
-  
-  // Step 1: Conclude current conversation if applicable
-  if (fromCharacter) {
-    concludeConversation(fromCharacter, setState, gameState);
-  }
-  
-  // Step 2: Generate appropriate transition narrative
-  const transitionMessage = generateTransitionNarrative(fromCharacter, toCharacter, action, gameState);
-  
-  if (transitionMessage) {
-    // Add the transition message to the message list
-    gameState.setMsgs(msgs => [...msgs, { 
-      speaker: 'System', 
-      content: transitionMessage 
-    }]);
-  }
-  
-  // Step 3: If moving to a new character, prepare for that conversation
-  if (toCharacter && toCharacter !== fromCharacter) {
-    prepareNewConversation(toCharacter, setState, gameState);
-  }
-  
-  // Step 4: Apply any time costs for the transition
-  applyTransitionTimeCosts(fromCharacter, toCharacter, action, gameState);
-}
-
-// Helper to conclude the current conversation
-function concludeConversation(character, setState, gameState) {
-  setState(prevState => {
-    // Get character data
-    const characterData = prevState.characters[character] || {};
-    
-    // Mark conversation as concluded
-    return {
-      ...prevState,
-      conversationPhase: 'NONE',
-      currentCharacter: null,
-      characters: {
-        ...prevState.characters,
-        [character]: {
-          ...characterData,
-          lastInteractionTime: gameState.currentTime,
-          // Record how the conversation ended
-          conversationEndState: {
-            time: gameState.currentTime,
-            topics: characterData.topicsDiscussed || [],
-            mood: characterData.mood || 'neutral',
-            suspicionLevel: characterData.suspicionLevel || 0
-          }
-        }
-      }
-    };
-  });
-}
-
-// Helper to generate transition narrative
-function generateTransitionNarrative(fromCharacter, toCharacter, action, gameState) {
-  // Different narrative types based on the transition
-  if (action === 'END_CONVERSATION' && fromCharacter) {
-    // Ending a conversation
-    const timeOfDay = getTimeOfDay(gameState.currentTime);
-    const characterMood = gameState.conversationState.characters[fromCharacter]?.mood || 'neutral';
-    
-    const endingPhrases = {
-      'defensive': `*${fromCharacter} crosses their arms defensively as you wrap up the conversation.*`,
-      'nervous': `*${fromCharacter} fidgets nervously as you conclude your questioning.*`,
-      'friendly': `*${fromCharacter} nods understandingly as you prepare to leave.*`,
-      'suspicious': `*${fromCharacter} watches you carefully as you step away.*`,
-      'neutral': `*You conclude your conversation with ${fromCharacter}.*`
-    };
-    
-    return endingPhrases[characterMood] || endingPhrases.neutral;
-  } 
-  else if (action === 'MOVE_TO_CHARACTER' && toCharacter) {
-    // Moving to a new character
-    const isReturning = gameState.conversationState.characters[toCharacter]?.state === 'RETURNING';
-    
-    if (isReturning) {
-      return `*You return to continue your conversation with ${toCharacter}.*`;
-    } else {
-      const locationDescriptions = {
-        'Marvin Lott': `*You approach Marvin's apartment door and knock. After a moment, he answers.*`,
-        'Rachel Kim': `*You find Rachel waiting in the building lobby, her eyes red from crying.*`,
-        'Jordan Valez': `*You track down Jordan at his workplace, a small design firm downtown.*`
-      };
-      
-      return locationDescriptions[toCharacter] || `*You approach ${toCharacter} to begin your interview.*`;
-    }
-  }
-  else if (action === 'TRANSITION_TO_INVESTIGATION') {
-    // Returning to investigation mode
-    return `*You turn your attention back to examining the crime scene.*`;
-  }
-  
-  // Default transition
-  return null;
-}
-
-// Helper to prepare for a new conversation
-function prepareNewConversation(character, setState, gameState) {
-  setState(prevState => {
-    // Get existing character data or initialize
-    const characterData = prevState.characters[character] || {
-      state: 'INITIAL',
-      topicsDiscussed: [],
-      visitCount: 0,
-      mood: 'neutral',
-      suspicionLevel: 0
-    };
-    
-    // Determine if this is a returning visit
-    const isReturning = characterData.state === 'INITIAL' && characterData.visitCount > 0;
-    
-    // Prepare greeting phase
-    return {
-      ...prevState,
-      currentCharacter: character,
-      conversationPhase: 'GREETING',
-      pendingAction: null,
-      characters: {
-        ...prevState.characters,
-        [character]: {
-          ...characterData,
-          state: isReturning ? 'RETURNING' : 'INITIAL',
-          visitCount: characterData.visitCount + 1,
-          currentConversationStartTime: gameState.currentTime
-        }
-      }
-    };
-  });
-}
-
-// Helper to apply time costs for transitions
-function applyTransitionTimeCosts(fromCharacter, toCharacter, action, gameState) {
-  let timeCost = 0;
-  
-  // Different costs based on transition type
-  if (action === 'MOVE_TO_CHARACTER' && toCharacter) {
-    // Cost to travel to a new character
-    timeCost = 10; // 10 minutes to travel to a new location
-  } 
-  else if (action === 'END_CONVERSATION') {
-    // Small cost to conclude conversation
-    timeCost = 2; // 2 minutes to wrap up
-  }
-  
-  // Apply the time cost
-  if (timeCost > 0) {
-    gameState.setTimeElapsed(te => te + timeCost);
-    gameState.setTimeRemaining(tr => tr - timeCost);
-  }
-}
-
-// Helper to get time of day description
-function getTimeOfDay(timeMinutes) {
-  const hour = Math.floor(timeMinutes / 60);
-  
-  if (hour >= 5 && hour < 12) return 'morning';
-  if (hour >= 12 && hour < 17) return 'afternoon';
-  if (hour >= 17 && hour < 21) return 'evening';
-  return 'night';
-}
-
-    // Analyze and update conversation context for this dialogue
-updateConversationContext(
-  speaker, 
-  obj.text, 
-  {
-    currentTime: fmt(currentClock()),
-    detectiveName: detectiveName,
-    evidence: evidence,
-    leads: leads
-  }, 
-  setConversationState
-);
-    
-    // Update conversation topics if this is character dialogue
-    if (speaker !== 'Navarro' && speaker === conversationState.currentCharacter) {
-      // Extract potential topics from the dialogue
-      const topics = extractTopics(obj.text);
-
-      // Enhanced topic detection system - place this after your existing extractTopics function
-function analyzeDialogueContext(text, gameState) {
-  const results = {
-    topics: [],
-    evidenceReferences: [],
-    characterReferences: [],
-    emotionalTone: 'neutral',
-    questionTypes: [],
-    accusationLevel: 0
-  };
-  
-  const lowerText = text.toLowerCase();
-  
-  // ---- 1. Extract basic topics using existing function ----
-  results.topics = extractTopics(text);
-  
-  // ---- 2. Detect evidence references ----
-  const evidenceKeywords = {
-    'stab-wound': ['stab', 'wound', 'knife mark', 'injury'],
-    'no-forced-entry': ['forced entry', 'break in', 'lock', 'window'],
-    'partial-cleaning': ['clean', 'wipe', 'blood', 'cleaned up'],
-    'missing-phone': ['phone', 'cell', 'mobile', 'call'],
-    'locked-door': ['locked', 'door', 'from inside', 'locked from'],
-    'bloodstain': ['blood', 'stain', 'pattern', 'spatter'],
-    'bracelet-charm': ['bracelet', 'charm', 'jewelry', 'accessory']
-  };
-  
-  // Check for evidence references
-  Object.entries(evidenceKeywords).forEach(([evidenceId, keywords]) => {
-    if (keywords.some(word => lowerText.includes(word))) {
-      results.evidenceReferences.push(evidenceId);
-    }
-  });
-  
-  // ---- 3. Detect character references ----
-  const characterKeywords = {
-    'Marvin Lott': ['marvin', 'lott', 'neighbor', 'neighbour'],
-    'Rachel Kim': ['rachel', 'kim', 'friend', 'best friend'],
-    'Jordan Valez': ['jordan', 'valez', 'boyfriend', 'ex']
-  };
-  
-  // Check for character references
-  Object.entries(characterKeywords).forEach(([character, keywords]) => {
-    if (keywords.some(word => lowerText.includes(word))) {
-      results.characterReferences.push(character);
-    }
-  });
-  
-  // ---- 4. Analyze emotional tone ----
-  const emotionKeywords = {
-    'angry': ['angry', 'mad', 'furious', 'outraged', 'upset', 'frustrated'],
-    'sad': ['sad', 'depressed', 'miserable', 'unhappy', 'heartbroken'],
-    'fearful': ['afraid', 'scared', 'frightened', 'terrified', 'worried', 'nervous'],
-    'confused': ['confused', 'puzzled', 'bewildered', 'unsure', 'uncertain'],
-    'suspicious': ['suspicious', 'doubt', 'questionable', 'fishy', 'skeptical'],
-    'sympathetic': ['sorry', 'sympathy', 'understand', 'condolences', 'feel for you'],
-    'threatening': ['threat', 'warning', 'careful', 'watch out', 'better not']
-  };
-  
-  // Determine emotional tone
-  let dominantEmotion = 'neutral';
-  let highestCount = 0;
-  
-  Object.entries(emotionKeywords).forEach(([emotion, keywords]) => {
-    const count = keywords.filter(word => lowerText.includes(word)).length;
-    if (count > highestCount) {
-      highestCount = count;
-      dominantEmotion = emotion;
-    }
-  });
-  
-  results.emotionalTone = highestCount > 0 ? dominantEmotion : 'neutral';
-  
-  // ---- 5. Detect question types ----
-  const questionPatterns = {
-    'timeline': ['when', 'what time', 'how long', 'what day', 'during'],
-    'location': ['where', 'which place', 'location', 'what room'],
-    'motivation': ['why', 'reason', 'motive', 'what for', 'purpose'],
-    'method': ['how', 'what way', 'manner', 'means', 'technique'],
-    'identity': ['who', 'which person', 'name', 'identify']
-  };
-  
-  // Check for question types
-  Object.entries(questionPatterns).forEach(([questionType, patterns]) => {
-    if (patterns.some(pattern => lowerText.includes(pattern) && 
-                               (lowerText.includes('?') || 
-                                lowerText.startsWith('tell me') ||
-                                lowerText.startsWith('i want to know')))) {
-      results.questionTypes.push(questionType);
-    }
-  });
-  
-  // ---- 6. Analyze accusation level ----
-  const accusationKeywords = [
-    'lie', 'lying', 'liar', 'truth', 'honest', 'hiding', 'suspicious',
-    'alibi', 'prove', 'guilty', 'innocent', 'killed', 'murder', 'murderer'
-  ];
-  
-  // Calculate accusation level (0-5)
-  const accusationCount = accusationKeywords.filter(word => lowerText.includes(word)).length;
-  results.accusationLevel = Math.min(5, accusationCount);
-  
-  // Include related evidence and characters in topics
-  results.topics = [...new Set([
-    ...results.topics,
-    ...results.evidenceReferences.map(ev => `evidence-${ev}`),
-    ...results.characterReferences.map(char => `person-${char}`)
-  ])];
-  
-  console.log('🔍 Dialogue analysis:', results);
-  return results;
-}
-
-// Add this function to update the global conversation context based on dialogue
-function updateConversationContext(speakerName, text, gameState, setConversationState) {
-  if (!speakerName || speakerName === 'System') return;
-  
-  // Analyze the dialogue
-  const analysis = analyzeDialogueContext(text, gameState);
-  
-  // Update the conversation state based on the analysis
-  setConversationStateWithValidation(prev => {
-    // Get existing character data or create new
-    const character = prev.characters[speakerName] || {
-      topicsDiscussed: [],
-      state: 'INITIAL',
-      relationshipLevel: 0,
-      suspicionLevel: 0,
-      mood: 'neutral',
-      emotionalResponses: {},
-      questionHistory: [],
-      contradictions: []
-    };
-    
-    // Track emotional responses
-    const emotionalResponses = {...character.emotionalResponses};
-    if (analysis.emotionalTone !== 'neutral') {
-      emotionalResponses[analysis.emotionalTone] = 
-        (emotionalResponses[analysis.emotionalTone] || 0) + 1;
-    }
-    
-    // Track question history
-    const questionHistory = [...(character.questionHistory || [])];
-    if (analysis.questionTypes.length > 0) {
-      questionHistory.push({
-        types: analysis.questionTypes,
-        timestamp: gameState.currentTime,
-        text: text
-      });
-    }
-    
-    // Update suspicion level based on accusation level
-    let suspicionLevel = character.suspicionLevel || 0;
-    if (analysis.accusationLevel > 0) {
-      // Increase suspicion if character is accused
-      if (speakerName !== 'Navarro' && speakerName !== gameState.detectiveName) {
-        suspicionLevel = Math.min(10, suspicionLevel + analysis.accusationLevel);
-      }
-    }
-    
-    // Update character's mood based on emotional tone
-    let mood = character.mood || 'neutral';
-    if (analysis.emotionalTone === 'threatening' || analysis.emotionalTone === 'angry') {
-      mood = 'defensive';
-    } else if (analysis.emotionalTone === 'sympathetic') {
-      mood = 'appreciative';
-    } else if (analysis.emotionalTone === 'suspicious') {
-      mood = 'nervous';
-    }
-    
-    // Return updated state
-    return {
-      ...prev,
-      globalTopics: [...new Set([...(prev.globalTopics || []), ...analysis.topics])],
-      characters: {
-        ...prev.characters,
-        [speakerName]: {
-          ...character,
-          topicsDiscussed: [...new Set([...character.topicsDiscussed, ...analysis.topics])],
-          emotionalResponses,
-          questionHistory,
-          suspicionLevel,
-          mood,
-          // Track the last analyzed dialogue
-          lastDialogue: {
-            text,
-            analysis,
-            timestamp: gameState.currentTime
-          }
-        }
-      }
-    };
-  });
-}
-      
-      setConversationStateWithValidation(prev => ({
-        ...prev,
-        characters: {
-          ...prev.characters,
-          [speaker]: {
-            ...prev.characters[speaker],
-            topicsDiscussed: [...(prev.characters[speaker]?.topicsDiscussed || []), ...topics]
-          }
-        }
-      }));
-    }
-    
-    // Handle interview time costs
-    if (speaker !== 'Navarro' && !seenNpcInterviewed[speaker]) {
-      setTimeElapsed(te => te + ACTION_COSTS.interview);
-      setTimeRemaining(tr => tr - ACTION_COSTS.interview);
-      setSeenNpcInterviewed(s => ({ ...s, [speaker]: true }));
-    }
-  }
-  
-  // If no valid response was parsed, add a fallback
-  if (parsed.length === 0) {
-    console.warn('⚠️ No valid response parsed! Adding fallback message.');
-    
-    // Determine who should be speaking
-    const fallbackSpeaker = conversationState.pendingAction === 'ASK_NAVARRO' 
-      ? 'Navarro' 
-      : conversationState.currentCharacter || 'Navarro';
-    
-    // Add a fallback message
-    setMsgs(m => [...m, { 
-      speaker: fallbackSpeaker, 
-      content: fallbackSpeaker === 'Navarro'
-        ? "Let's stay focused on the investigation, Detective."
-        : "I'm not sure I understand. Could you rephrase that?"
-    }]);
-  }
-  
-  // After all character dialogue is processed, then show the notifications
-  setTimeout(() => {
-    processPendingNotifications();
-  }, 500); // Short delay to ensure dialogue is processed first
-  
-  // Reset conversation state if character is exiting the conversation
-  // Reset conversation state if character is exiting the conversation
-if (conversationState.conversationPhase === 'CONCLUDING') {
-  setTimeout(() => {
-    // Generate exit narrative if appropriate
-    const exitNarrative = generateTransitionNarrative(
-      conversationState.currentCharacter,
-      null,
-      'END_CONVERSATION',
-      {
-        currentTime: currentClock(),
-        conversationState
-      }
-    );
-    
-    if (exitNarrative) {
-      setMsgs(m => [...m, { speaker: 'System', content: exitNarrative }]);
-    }
-    
-    // Reset conversation state
-    setConversationStateWithValidation(prev => ({
-      ...prev,
-      currentCharacter: null,
-      pendingAction: null,
-      conversationPhase: 'NONE'
+    const history = [...msgs, { speaker: detectiveName, content: actionText }].map(m => ({
+      role: m.speaker === 'System' ? 'system'
+          : m.speaker === detectiveName ? 'user'
+          : 'assistant',
+      content: m.content
     }));
-  }, 1000); // Small delay to let the goodbye message process
-}
-} catch (err) {
-  setMsgs(m => [...m, { speaker: 'Navarro', content: `❌ ${err.message}` }]);
-} finally {
-  setLoading(false);
-}
+    
+    const res = await fetch('http://localhost:3001/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: history,
+        gameState: {
+          currentTime: fmt(currentClock()),
+          timeRemaining: fmt(timeRemaining),
+          location: LOCATION,
+          mode,
+          evidence: evidence,
+          leads: leads,
+          detectiveName,
+          conversation: conversationContext,
+          pendingAction: conversationState.pendingAction,
+          currentCharacter: mentionedCharacter || currentCharacter
+        }
+      }),
+    });
+    
+    const { text } = await res.json();
+
+    // —— DEBUG LOGS ——
+    const lines = text.trim().split(/\r?\n/);
+    const parsed = lines
+      .map(l => { try { return JSON.parse(l) } catch { return null } })
+      .filter(o => o && (o.type === 'stage' || o.type === 'dialogue'));
+
+    console.log('💬 RAW STREAM LINES:', lines);
+    console.log('💬 PARSED OBJECTS:', parsed);
+
+    // Process responses in the correct order
+    const stageDirections = parsed.filter(obj => obj.type === 'stage');
+    const dialogueResponses = parsed.filter(obj => obj.type === 'dialogue');
+    
+    // Check if we're transitioning to a new character
+    const isTransitioningToCharacter = mentionedCharacter && mentionedCharacter !== currentCharacter;
+    
+    // If transitioning to a new character, handle the response differently
+    if (isTransitioningToCharacter) {
+      // Only add the first stage direction (the scene transition)
+      if (stageDirections.length > 0) {
+        setMsgs(m => [...m, { 
+          speaker: 'System', 
+          content: `*${stageDirections[0].description}*` 
+        }]);
+      }
+      
+      // Only add dialogue responses from the character we're transitioning to
+      const characterResponses = dialogueResponses.filter(obj => obj.speaker === mentionedCharacter);
+      if (characterResponses.length > 0) {
+        setMsgs(m => [...m, { 
+          speaker: mentionedCharacter, 
+          content: characterResponses[0].text 
+        }]);
+        
+        // Track conversation for the first response
+        trackConversationHistory(
+          mentionedCharacter,
+          characterResponses[0].text,
+          false,
+          setConversationState,
+          {
+            currentTime: fmt(currentClock()),
+            timeElapsed: timeElapsed,
+            detectiveName: detectiveName,
+            evidence: evidence,
+            leads: leads
+          }
+        );
+        
+        // Update conversation context for the first response
+        updateConversationContext(
+          mentionedCharacter,
+          characterResponses[0].text,
+          {
+            currentTime: fmt(currentClock()),
+            detectiveName: detectiveName,
+            evidence: evidence,
+            leads: leads
+          },
+          setConversationState
+        );
+        
+        // Handle interview time costs
+        if (!seenNpcInterviewed[mentionedCharacter]) {
+          setTimeElapsed(te => te + ACTION_COSTS.interview);
+          setTimeRemaining(tr => tr - ACTION_COSTS.interview);
+          setSeenNpcInterviewed(s => ({ ...s, [mentionedCharacter]: true }));
+        }
+      }
+    } else {
+      // Normal processing for non-transition responses
+      
+      // First add stage directions
+      for (const obj of stageDirections) {
+        setMsgs(m => [...m, { speaker: 'System', content: `*${obj.description}*` }]);
+      }
+      
+      // Then add dialogue responses
+      for (const obj of dialogueResponses) {
+        // Validate the speaker matches our expected conversation partner
+        let speaker = obj.speaker;
+        
+        // Enforce conversation state - if we're in a conversation with a character
+        // and we get dialogue that's not from that character or Navarro, fix it
+        if (
+          conversationState.currentCharacter && 
+          speaker !== conversationState.currentCharacter && 
+          speaker !== 'Navarro' && 
+          conversationState.pendingAction !== 'ASK_NAVARRO'
+        ) {
+          console.warn(`⚠️ Speaker mismatch! Expected ${conversationState.currentCharacter}, got ${speaker}. Fixing.`);
+          speaker = conversationState.currentCharacter;
+        }
+        
+        // If we're asking Navarro specifically, enforce that the response is from him
+        if (conversationState.pendingAction === 'ASK_NAVARRO' && speaker !== 'Navarro') {
+          console.warn(`⚠️ Speaker mismatch! Expected Navarro for ASK_NAVARRO action, got ${speaker}. Fixing.`);
+          speaker = 'Navarro';
+        }
+        
+        // Add the message with validated speaker
+        setMsgs(m => [...m, { speaker: speaker, content: obj.text }]);
+
+        // Track the conversation
+        trackConversationHistory(
+          speaker, 
+          obj.text, 
+          // Detect if this was a response to a question
+          input.includes('?') || 
+            input.toLowerCase().startsWith('tell me') || 
+            input.toLowerCase().startsWith('what'),
+          setConversationState,
+          {
+            currentTime: fmt(currentClock()),
+            timeElapsed: timeElapsed,
+            detectiveName: detectiveName,
+            evidence: evidence,
+            leads: leads
+          }
+        );
+        
+        // Analyze and update conversation context for this dialogue
+        updateConversationContext(
+          speaker, 
+          obj.text, 
+          {
+            currentTime: fmt(currentClock()),
+            detectiveName: detectiveName,
+            evidence: evidence,
+            leads: leads
+          }, 
+          setConversationState
+        );
+        
+        // Update conversation topics if this is character dialogue
+        if (speaker !== 'Navarro' && speaker === conversationState.currentCharacter) {
+          // Extract potential topics from the dialogue
+          const topics = extractTopics(obj.text);
+          
+          setConversationStateWithValidation(prev => ({
+            ...prev,
+            characters: {
+              ...prev.characters,
+              [speaker]: {
+                ...prev.characters[speaker],
+                topicsDiscussed: [...(prev.characters[speaker]?.topicsDiscussed || []), ...topics]
+              }
+            }
+          }));
+        }
+        
+        // Handle interview time costs
+        if (speaker !== 'Navarro' && !seenNpcInterviewed[speaker]) {
+          setTimeElapsed(te => te + ACTION_COSTS.interview);
+          setTimeRemaining(tr => tr - ACTION_COSTS.interview);
+          setSeenNpcInterviewed(s => ({ ...s, [speaker]: true }));
+        }
+      }
+      
+      // If no valid response was parsed, add a fallback
+      if (parsed.length === 0) {
+        console.warn('⚠️ No valid response parsed! Adding fallback message.');
+        
+        // Determine who should be speaking
+        const fallbackSpeaker = conversationState.pendingAction === 'ASK_NAVARRO' 
+          ? 'Navarro' 
+          : conversationState.currentCharacter || 'Navarro';
+        
+        // Add a fallback message
+        setMsgs(m => [...m, { 
+          speaker: fallbackSpeaker, 
+          content: fallbackSpeaker === 'Navarro'
+            ? "Let's stay focused on the investigation, Detective."
+            : "I'm not sure I understand. Could you rephrase that?"
+        }]);
+      }
+      
+      // After all character dialogue is processed, then show the notifications
+      setTimeout(() => {
+        processPendingNotifications();
+      }, 500); // Short delay to ensure dialogue is processed first
+      
+      // Reset conversation state if character is exiting the conversation
+      if (conversationState.conversationPhase === 'CONCLUDING') {
+        setTimeout(() => {
+          // Generate exit narrative if appropriate
+          const exitNarrative = generateTransitionNarrative(
+            conversationState.currentCharacter,
+            null,
+            'END_CONVERSATION',
+            {
+              currentTime: currentClock(),
+              conversationState
+            }
+          );
+          
+          if (exitNarrative) {
+            setMsgs(m => [...m, { speaker: 'System', content: exitNarrative }]);
+          }
+          
+          // Reset conversation state
+          setConversationStateWithValidation(prev => ({
+            ...prev,
+            currentCharacter: null,
+            pendingAction: null,
+            conversationPhase: 'NONE'
+          }));
+        }, 1000); // Small delay to let the goodbye message process
+      }
+    }
+  } catch (err) {
+    setMsgs(m => [...m, { speaker: 'Navarro', content: `❌ ${err.message}` }]);
+  } finally {
+    setLoading(false);
+    setInput(''); // Clear input field after all processing is done
+  }
 };
 
   // —— ACCUSATION HANDLERS ——
