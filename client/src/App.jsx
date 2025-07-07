@@ -16,6 +16,55 @@ const ACTION_COSTS = {
 
 const INTENT_VERBS = ['knock', 'walk', 'go to', 'head to', 'approach', 'talk to', 'visit', 'ask'];
 
+// Helper function to get time of day description
+function getTimeOfDay(timeInMinutes) {
+  const hours = Math.floor(timeInMinutes / 60);
+  
+  if (hours < 6) {
+    return 'night';
+  } else if (hours < 12) {
+    return 'morning';
+  } else if (hours < 17) {
+    return 'afternoon';
+  } else if (hours < 21) {
+    return 'evening';
+  } else {
+    return 'night';
+  }
+}
+
+// Helper to generate transition narrative
+function generateTransitionNarrative(fromCharacter, toCharacter, action, gameState) {
+  // Different narrative types based on the transition
+  if (action === 'END_CONVERSATION' && fromCharacter) {
+    // Ending a conversation
+    const timeOfDay = getTimeOfDay(gameState.currentTime);
+    const characterMood = gameState.conversationState?.characters[fromCharacter]?.mood || 'neutral';
+    
+    const endingPhrases = {
+      'defensive': `*${fromCharacter} crosses their arms defensively as you wrap up the conversation.*`,
+      'nervous': `*${fromCharacter} fidgets nervously as you conclude your questioning.*`,
+      'friendly': `*${fromCharacter} nods understandingly as you prepare to leave.*`,
+      'suspicious': `*${fromCharacter} watches you carefully as you step away.*`,
+      'neutral': `*You conclude your conversation with ${fromCharacter}.*`
+    };
+    
+    return endingPhrases[characterMood] || endingPhrases.neutral;
+  } 
+  else if (action === 'MOVE_TO_CHARACTER' && toCharacter) {
+    // Moving to a new character
+    const isReturning = gameState.conversationState?.characters[toCharacter]?.state === 'RETURNING';
+    
+    if (isReturning) {
+      return `*You return to ${toCharacter} to continue your conversation.*`;
+    } else {
+      return `*You approach ${toCharacter} to speak with them.*`;
+    }
+  }
+  
+  return null;
+}
+
 // Helper function to get commentary for evidence types
 function getEvidenceCommentary(evidenceId) {
   switch(evidenceId) {
@@ -235,6 +284,7 @@ export default function App() {
 });  
 const currentClock = () => START_OF_DAY + timeElapsed;
 
+
   // new state for lead triggers
   const [actionsPerformed, setActionsPerformed]     = useState([]);
   const [interviewsCompleted, setInterviewsCompleted] = useState([]);
@@ -253,6 +303,8 @@ const currentClock = () => START_OF_DAY + timeElapsed;
     "Marvin Lott, the neighbor who called it in, might have important information.",
     "Need to establish a timeline of events leading to the murder."
   ]);
+
+
    // Create an enhanced conversation state setter with validation
   function setConversationStateWithValidation(updater) {
     setConversationState(prevState => {
@@ -1593,48 +1645,6 @@ function isGeneralInvestigativeAction(text) {
     });
   }
 
-  // Helper to generate transition narrative
-  function generateTransitionNarrative(fromCharacter, toCharacter, action, gameState) {
-    // Different narrative types based on the transition
-    if (action === 'END_CONVERSATION' && fromCharacter) {
-      // Ending a conversation
-      const timeOfDay = getTimeOfDay(gameState.currentTime);
-      const characterMood = gameState.conversationState?.characters[fromCharacter]?.mood || 'neutral';
-      
-      const endingPhrases = {
-        'defensive': `*${fromCharacter} crosses their arms defensively as you wrap up the conversation.*`,
-        'nervous': `*${fromCharacter} fidgets nervously as you conclude your questioning.*`,
-        'friendly': `*${fromCharacter} nods understandingly as you prepare to leave.*`,
-        'suspicious': `*${fromCharacter} watches you carefully as you step away.*`,
-        'neutral': `*You conclude your conversation with ${fromCharacter}.*`
-      };
-      
-      return endingPhrases[characterMood] || endingPhrases.neutral;
-    } 
-    else if (action === 'MOVE_TO_CHARACTER' && toCharacter) {
-      // Moving to a new character
-      const isReturning = gameState.conversationState?.characters[toCharacter]?.state === 'RETURNING';
-      
-      if (isReturning) {
-        return `*You return to continue your conversation with ${toCharacter}.*`;
-      } else {
-        const locationDescriptions = {
-          'Marvin Lott': `*You approach Marvin's apartment door and knock. After a moment, he answers.*`,
-          'Rachel Kim': `*You find Rachel waiting in the building lobby, her eyes red from crying.*`,
-          'Jordan Valez': `*You track down Jordan at his workplace, a small design firm downtown.*`
-        };
-        
-        return locationDescriptions[toCharacter] || `*You approach ${toCharacter} to begin your interview.*`;
-      }
-    }
-    else if (action === 'TRANSITION_TO_INVESTIGATION') {
-      // Returning to investigation mode
-      return `*You turn your attention back to examining the crime scene.*`;
-    }
-    
-    // Default transition
-    return null;
-  }
 
   // Helper to prepare for a new conversation
   function prepareNewConversation(character, setState, gameState) {
