@@ -52,14 +52,8 @@ function generateTransitionNarrative(fromCharacter, toCharacter, action, gameSta
     return endingPhrases[characterMood] || endingPhrases.neutral;
   } 
   else if (action === 'MOVE_TO_CHARACTER' && toCharacter) {
-    // Moving to a new character
-    const isReturning = gameState.conversationState?.characters[toCharacter]?.state === 'RETURNING';
-    
-    if (isReturning) {
-      return `*You return to ${toCharacter} to continue your conversation.*`;
-    } else {
-      return `*You approach ${toCharacter} to speak with them.*`;
-    }
+    // Moving to a new character - we handle this manually now, so return null
+    return null;
   }
   
   return null;
@@ -689,14 +683,40 @@ const isEndingConversation = useCallback((text, currentState) => {
   }, [notificationTimeout]);
   
   const [notes, setNotes] = useState([]);
+  const [extractedInformation, setExtractedInformation] = useState({});
+  
+  // Track actual extracted information from conversations
   useEffect(() => {
     console.log('🔍 Updating notes from leads:', leads);
-    const unlocked = leadDefinitions
-      .filter(d => leads.includes(d.id) && !d.isRedHerring)
-      .map(d => d.description);
-    console.log('📝 Setting notes to:', unlocked);
-    setNotes(unlocked || []);
-  }, [leads]);
+    const updatedNotes = [];
+    
+    // Process each active lead and add only actually extracted information
+    leads.forEach(leadId => {
+      const leadDef = leadDefinitions.find(d => d.id === leadId);
+      if (!leadDef || leadDef.isRedHerring) return;
+      
+      // Check if this is an interview lead and we have extracted info
+      if (leadId === 'interview-marvin' && extractedInformation['Marvin Lott']) {
+        const marvinInfo = extractedInformation['Marvin Lott'];
+        updatedNotes.push(`Marvin Lott (Neighbor): ${marvinInfo.join(', ')}`);
+      }
+      else if (leadId === 'interview-rachel' && extractedInformation['Rachel Kim']) {
+        const rachelInfo = extractedInformation['Rachel Kim'];
+        updatedNotes.push(`Rachel Kim (Best Friend): ${rachelInfo.join(', ')}`);
+      }
+      else if (leadId === 'interview-jordan' && extractedInformation['Jordan Valez']) {
+        const jordanInfo = extractedInformation['Jordan Valez'];
+        updatedNotes.push(`Jordan Valez (Ex-Boyfriend): ${jordanInfo.join(', ')}`);
+      }
+      else if (leadId.includes('scene-') || leadId.includes('analysis') || leadId.includes('records')) {
+        // For non-interview leads, show the generic description
+        updatedNotes.push(leadDef.description);
+      }
+    });
+    
+    console.log('📝 Setting notes to:', updatedNotes);
+    setNotes(updatedNotes);
+  }, [leads, extractedInformation]);
 
   // —— ON MOUNT: LOAD SAVE —— 
   useEffect(() => {
@@ -718,6 +738,121 @@ const isEndingConversation = useCallback((text, currentState) => {
 
 
   // Helper function to detect character mentions in user input
+
+// Function to extract actual information from character dialogue
+function extractInformationFromDialogue(speaker, text) {
+  const extracted = [];
+  const lowerText = text.toLowerCase();
+  
+  if (speaker === 'Marvin Lott') {
+    // Extract specific information from Marvin's dialogue
+    if (lowerText.includes('3:30') || lowerText.includes('scream')) {
+      extracted.push('Heard scream around 3:30 AM');
+    }
+    if (lowerText.includes('called 911') || lowerText.includes('911')) {
+      extracted.push('Called 911 after hearing scream');
+    }
+    if (lowerText.includes('15 minutes') || lowerText.includes('waited')) {
+      extracted.push('Waited 15 minutes before calling');
+    }
+    if (lowerText.includes('furniture') || lowerText.includes('moving')) {
+      extracted.push('Heard furniture moving after scream');
+    }
+    if (lowerText.includes('someone leaving') || lowerText.includes('saw') && lowerText.includes('building')) {
+      extracted.push('Saw someone leave building around 3:45-4:00 AM');
+    }
+    if (lowerText.includes('nervous') || lowerText.includes('shaken')) {
+      extracted.push('Appeared nervous during questioning');
+    }
+    if (lowerText.includes('visitor') || lowerText.includes('woman') || lowerText.includes('man')) {
+      extracted.push('Mentioned seeing visitors at victim\'s apartment');
+    }
+  }
+  
+  if (speaker === 'Rachel Kim') {
+    // Extract information from Rachel's dialogue
+    if (lowerText.includes('8:00') || lowerText.includes('breakfast')) {
+      extracted.push('Claims found body at 8:00 AM for breakfast');
+    }
+    if (lowerText.includes('best friend') || lowerText.includes('close')) {
+      extracted.push('Claims to be victim\'s best friend');
+    }
+    if (lowerText.includes('jordan') || lowerText.includes('ex')) {
+      extracted.push('Mentioned Jordan (ex-boyfriend)');
+    }
+    if (lowerText.includes('jealous') || lowerText.includes('angry')) {
+      extracted.push('Described someone as jealous/angry');
+    }
+  }
+  
+  if (speaker === 'Jordan Valez') {
+    // Extract information from Jordan's dialogue
+    if (lowerText.includes('lockwood') || lowerText.includes('bar')) {
+      extracted.push('Claims was at Lockwood Bar');
+    }
+    if (lowerText.includes('uber') || lowerText.includes('receipt')) {
+      extracted.push('Has Uber receipt as alibi');
+    }
+    if (lowerText.includes('restraining order') || lowerText.includes('misunderstanding')) {
+      extracted.push('Mentioned restraining order was misunderstanding');
+    }
+    if (lowerText.includes('rachel') && (lowerText.includes('possessive') || lowerText.includes('involved'))) {
+      extracted.push('Described Rachel as overly involved');
+    }
+  }
+  
+  return extracted;
+}
+
+// Function to assess conversation completeness
+function assessConversationCompleteness(speaker, conversationState, extractedInformation) {
+  if (!speaker || speaker === 'Navarro') return { isComplete: false, completionRate: 0 };
+  
+  const characterData = conversationState.characters[speaker];
+  const extractedInfo = extractedInformation[speaker] || [];
+  
+  // Define expected information for each character
+  const expectedInfo = {
+    'Marvin Lott': [
+      'Heard scream around 3:30 AM',
+      'Called 911 after hearing scream',
+      'Waited 15 minutes before calling',
+      'Heard furniture moving after scream',
+      'Saw someone leave building around 3:45-4:00 AM',
+      'Mentioned seeing visitors at victim\'s apartment'
+    ],
+    'Rachel Kim': [
+      'Claims found body at 8:00 AM for breakfast',
+      'Claims to be victim\'s best friend',
+      'Mentioned Jordan (ex-boyfriend)',
+      'Described someone as jealous/angry'
+    ],
+    'Jordan Valez': [
+      'Claims was at Lockwood Bar',
+      'Has Uber receipt as alibi',
+      'Mentioned restraining order was misunderstanding',
+      'Described Rachel as overly involved'
+    ]
+  };
+  
+  const expected = expectedInfo[speaker] || [];
+  if (expected.length === 0) return { isComplete: false, completionRate: 0 };
+  
+  const extractedCount = extractedInfo.length;
+  const expectedCount = expected.length;
+  const completionRate = Math.round((extractedCount / expectedCount) * 100);
+  
+  // Consider complete if 70% or more information is extracted
+  const isComplete = completionRate >= 70;
+  
+  return {
+    isComplete,
+    completionRate,
+    extractedCount,
+    expectedCount,
+    missingInfo: expected.filter(info => !extractedInfo.includes(info))
+  };
+}
 
 // Add this conversation history tracking system to your codebase
 function trackConversationHistory(speaker, content, isQuestion, setState, gameState) {
@@ -1059,9 +1194,27 @@ function detectCharacterMention(text, currentState, gameState) {
     }
   }
   
-  // Find the highest scoring character
+  // Add flexible pattern matching for common phrases
+  const flexiblePatterns = [
+    { pattern: /\b(go|talk|speak).{0,10}(neighbor|marvin)/i, character: 'Marvin Lott', score: 8 },
+    { pattern: /\b(visit|see|meet).{0,10}(neighbor|marvin)/i, character: 'Marvin Lott', score: 7 },
+    { pattern: /\b(talk|speak).{0,10}(friend|rachel)/i, character: 'Rachel Kim', score: 8 },
+    { pattern: /\b(visit|see|meet).{0,10}(friend|rachel)/i, character: 'Rachel Kim', score: 7 },
+    { pattern: /\b(talk|speak).{0,10}(ex|jordan|boyfriend)/i, character: 'Jordan Valez', score: 8 },
+    { pattern: /\b(visit|see|meet).{0,10}(ex|jordan|boyfriend)/i, character: 'Jordan Valez', score: 7 }
+  ];
+  
+  flexiblePatterns.forEach(pattern => {
+    if (pattern.pattern.test(text)) {
+      characterScores[pattern.character] += pattern.score;
+    }
+  });
+  
+  // Find the highest scoring character with debug logging
   let highestScore = 0;
   let detectedCharacter = null;
+  
+  console.log('🎯 Character scores:', characterScores);
   
   Object.entries(characterScores).forEach(([character, score]) => {
     if (score > highestScore) {
@@ -1076,7 +1229,7 @@ function detectCharacterMention(text, currentState, gameState) {
     return detectedCharacter;
   }
   
-  console.log('❌ No character detected with significant confidence');
+  console.log(`❌ No character detected with significant confidence (highest: ${highestScore})`);
   return null;
 }
 
@@ -1248,7 +1401,8 @@ function isGeneralInvestigativeAction(text) {
       seenNpcInterviewed,
       actionsPerformed,
       interviewsCompleted,
-      conversationState
+      conversationState,
+      extractedInformation
     };
     localStorage.setItem('first48_save', JSON.stringify(toSave));
     setHasSave(true);
@@ -1276,6 +1430,7 @@ function isGeneralInvestigativeAction(text) {
       conversationPhase: 'NONE',
       lastResponseTime: null
     });
+    setExtractedInformation(savedState.extractedInformation || {});
   };
 
   // Update the startGame function
@@ -1587,9 +1742,106 @@ function isGeneralInvestigativeAction(text) {
     }));
   }
 
+  // Consolidated investigative action handler
+  function handleInvestigativeAction(input) {
+    // Add scene transition for crime scene investigation
+    if (input.toLowerCase().includes('apartment') || input.toLowerCase().includes('crime scene') || 
+        input.toLowerCase().includes('back to') || input.toLowerCase().includes('scene') ||
+        input.toLowerCase().includes('photograph') || input.toLowerCase().includes('document') ||
+        input.toLowerCase().includes('examine') || input.toLowerCase().includes('investigate')) {
+      
+      // Check if this is a return visit or initial investigation
+      const isReturning = input.toLowerCase().includes('back to') || input.toLowerCase().includes('return');
+      const transitionMessage = isReturning 
+        ? `*You return to ${LOCATION} to investigate further.*`
+        : `*You begin investigating ${LOCATION} thoroughly.*`;
+        
+      setMsgs(m => [...m, { 
+        speaker: 'System', 
+        content: transitionMessage
+      }]);
+    }
+    
+    handleSceneTransition(
+      conversationState.currentCharacter,
+      null,
+      'TRANSITION_TO_INVESTIGATION',
+      setConversationState,
+      {
+        currentTime: currentClock(),
+        setMsgs,
+        setTimeElapsed,
+        setTimeRemaining,
+        conversationState
+      }
+    );
+    
+    // Set conversation state for investigation
+    setConversationStateWithValidation(prev => ({
+      ...prev,
+      pendingAction: 'INVESTIGATE',
+      conversationPhase: prev.currentCharacter ? 'CONCLUDING' : 'NONE'
+    }));
+    
+    // Process game engine action
+    const gameEngineResult = applyAction({
+      timeElapsed,
+      timeRemaining,
+      evidence,
+      leads,
+      actionsPerformed,
+      interviewsCompleted,
+      interviewCounts
+    }, input);
+    
+    if (gameEngineResult.error) {
+      setMsgs(m => [...m, { speaker: 'Navarro', content: `❌ ${gameEngineResult.error}` }]);
+    } else {
+      // Update game state
+      setTimeElapsed(gameEngineResult.newState.timeElapsed);
+      setTimeRemaining(gameEngineResult.newState.timeRemaining);
+      setActionsPerformed(gameEngineResult.newState.actionsPerformed);
+      
+      // Process discovered evidence and leads
+      if (gameEngineResult.discoveredEvidence && gameEngineResult.discoveredEvidence.length > 0) {
+        setEvidence(gameEngineResult.newState.evidence);
+        gameEngineResult.discoveredEvidence.forEach(evidenceId => {
+          const evidenceDef = evidenceDefinitions.find(e => e.id === evidenceId);
+          if (evidenceDef) {
+            setPendingNotifications(n => [...n, { 
+              type: 'evidence', 
+              item: evidenceDef 
+            }]);
+          }
+        });
+      }
+      
+      if (gameEngineResult.newLeads && gameEngineResult.newLeads.length > 0) {
+        console.log('🎯 New leads discovered:', gameEngineResult.newLeads);
+        setLeads(prev => [...prev, ...gameEngineResult.newLeads.map(lead => lead.id)]);
+        gameEngineResult.newLeads.forEach(leadDef => {
+          setPendingNotifications(n => [...n, { 
+            type: 'lead', 
+            item: leadDef 
+          }]);
+        });
+      }
+    }
+  }
+
+  // Add transition state to prevent overlapping transitions
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  
   // Add these scene transition functions to your codebase
   function handleSceneTransition(fromCharacter, toCharacter, action, setState, gameState) {
+    // Prevent overlapping transitions
+    if (isTransitioning) {
+      console.log(`⏸️ Skipping transition: ${fromCharacter || 'none'} → ${toCharacter || 'none'} (${action}) - already transitioning`);
+      return;
+    }
+    
     console.log(`🎬 Scene transition: ${fromCharacter || 'none'} → ${toCharacter || 'none'} (${action})`);
+    setIsTransitioning(true);
     
     // Step 1: Conclude current conversation if applicable
     if (fromCharacter) {
@@ -1614,6 +1866,11 @@ function isGeneralInvestigativeAction(text) {
     
     // Step 4: Apply any time costs for the transition
     applyTransitionTimeCosts(fromCharacter, toCharacter, action, gameState);
+    
+    // Reset transition state after a brief delay to allow processing
+    setTimeout(() => {
+      setIsTransitioning(false);
+    }, 100);
   }
 
   // Helper to conclude the current conversation
@@ -1622,11 +1879,12 @@ function isGeneralInvestigativeAction(text) {
       // Get character data
       const characterData = prevState.characters[character] || {};
       
-      // Mark conversation as concluded
+      // Mark conversation as concluded - but keep it in CONCLUDING phase to allow exit sequence
       return {
         ...prevState,
-        conversationPhase: 'NONE',
-        currentCharacter: null,
+        conversationPhase: 'CONCLUDING', // Keep CONCLUDING to allow exit sequence
+        currentCharacter: character, // Keep character for exit sequence
+        pendingAction: 'END_CONVERSATION', // Keep END_CONVERSATION action
         characters: {
           ...prevState.characters,
           [character]: {
@@ -1730,30 +1988,84 @@ const sendMessage = async () => {
     }
   );
 
-// Update conversation state before sending request
-if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
+// Process investigative actions first (they can happen independently)
+const isInvestigative = isGeneralInvestigativeAction(input);
+if (isInvestigative) {
+  console.log('🔍 Processing investigative action:', input);
+  
+  // Add Navarro's affirmation for investigation
+  const affirmation = getNavarroAffirmation(input);
+  setMsgs(m => [...m, { speaker: 'Navarro', content: affirmation }]);
+  
+  // Handle investigative action processing
+  handleInvestigativeAction(input);
+}
+
+// Update conversation state based on context
+if (conversationState.conversationPhase === 'CONCLUDING') {
+  console.log('🔚 Already concluding conversation, continuing END_CONVERSATION flow');
+  setConversationStateWithValidation(prev => ({
+    ...prev,
+    pendingAction: 'END_CONVERSATION'
+  }));
+} else if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
   // First add Navarro's affirmation
   const affirmation = getNavarroAffirmation(actionText);
   setMsgs(m => [...m, { speaker: 'Navarro', content: affirmation }]);
   
-  // Short delay before transitioning to allow Navarro's affirmation to be seen
-  setTimeout(() => {
-    // Starting conversation with new character - handle scene transition
-    handleSceneTransition(
-      currentCharacter,
-      mentionedCharacter,
-      'MOVE_TO_CHARACTER',
-      setConversationState,
-      {
-        currentTime: currentClock(),
-        setMsgs,
-        setTimeElapsed,
-        setTimeRemaining,
-        conversationState
-      }
-    );
-  }, 500);
+  // Automatically add stage direction for approaching the character
+  const isFirstTime = !conversationState.characters[mentionedCharacter]?.visitCount || 
+                     conversationState.characters[mentionedCharacter]?.visitCount === 0;
+  
+  if (isFirstTime) {
+    // Add automatic stage direction for approaching and knocking on door
+    setMsgs(m => [...m, { 
+      speaker: 'System', 
+      content: `*You approach ${mentionedCharacter} to speak with them.*` 
+    }]);
+    
+    // Add automatic knocking stage direction
+    setMsgs(m => [...m, { 
+      speaker: 'System', 
+      content: `*You knock on the door.*` 
+    }]);
+  }
+  
+  // Starting conversation with new character - handle scene transition immediately
+  handleSceneTransition(
+    currentCharacter,
+    mentionedCharacter,
+    'MOVE_TO_CHARACTER',
+    setConversationState,
+    {
+      currentTime: currentClock(),
+      setMsgs,
+      setTimeElapsed,
+      setTimeRemaining,
+      conversationState
+    }
+  );
+  
+  // Update conversation state for the proxy request
+  setConversationStateWithValidation(prev => ({
+    ...prev,
+    currentCharacter: mentionedCharacter,
+    pendingAction: 'MOVE_TO_CHARACTER',
+    conversationPhase: 'GREETING'
+  }));
 } else if (currentCharacter && isEnding) {
+  // Assess conversation completeness before ending
+  const completeness = assessConversationCompleteness(currentCharacter, conversationState, extractedInformation);
+  
+  // Provide natural feedback only for good questioning
+  if (completeness.completionRate >= 70) {
+    setMsgs(m => [...m, { 
+      speaker: 'Navarro', 
+      content: `Good questioning. We can always circle back if needed.` 
+    }]);
+  }
+  // No feedback for incomplete conversations - just proceed with natural Navarro affirmation
+  
   // Ending conversation - handle scene transition
   handleSceneTransition(
     currentCharacter,
@@ -1769,11 +2081,11 @@ if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
     }
   );
   
-  // Set conversation state to reflect the conclusion
+  // Set conversation state to reflect the conclusion - but don't set CONCLUDING if currentCharacter is null
   setConversationStateWithValidation(prev => ({
     ...prev,
     pendingAction: 'END_CONVERSATION',
-    conversationPhase: 'CONCLUDING'
+    conversationPhase: prev.currentCharacter ? 'CONCLUDING' : 'NONE'
   }));
 } else if (currentCharacter && !isEnding) {
   // Continuing conversation with current character
@@ -1782,8 +2094,25 @@ if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
     pendingAction: 'CONTINUE_CONVERSATION',
     conversationPhase: 'QUESTIONING'
   }));
-} else if (isGeneralInvestigativeAction(input)) {
-  // Transitioning to investigation mode
+  
+  // Add scene transition for crime scene investigation
+  if (input.toLowerCase().includes('apartment') || input.toLowerCase().includes('crime scene') || 
+      input.toLowerCase().includes('back to') || input.toLowerCase().includes('scene') ||
+      input.toLowerCase().includes('photograph') || input.toLowerCase().includes('document') ||
+      input.toLowerCase().includes('examine') || input.toLowerCase().includes('investigate')) {
+    
+    // Check if this is a return visit or initial investigation
+    const isReturning = input.toLowerCase().includes('back to') || input.toLowerCase().includes('return');
+    const transitionMessage = isReturning 
+      ? `*You return to ${LOCATION} to investigate further.*`
+      : `*You begin investigating ${LOCATION} thoroughly.*`;
+      
+    setMsgs(m => [...m, { 
+      speaker: 'System', 
+      content: transitionMessage
+    }]);
+  }
+  
   handleSceneTransition(
     currentCharacter,
     null,
@@ -1797,6 +2126,59 @@ if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
       conversationState
     }
   );
+  
+  // Process the investigative action with game engine
+  const gameEngineResult = applyAction({
+    timeElapsed,
+    timeRemaining,
+    evidence,
+    leads,
+    actionsPerformed,
+    interviewsCompleted,
+    interviewCounts
+  }, input);
+  
+  if (gameEngineResult.error) {
+    setMsgs(m => [...m, { speaker: 'Navarro', content: `❌ ${gameEngineResult.error}` }]);
+  } else {
+    // Update game state
+    setTimeElapsed(gameEngineResult.newState.timeElapsed);
+    setTimeRemaining(gameEngineResult.newState.timeRemaining);
+    setActionsPerformed(gameEngineResult.newState.actionsPerformed);
+    
+    // Process discovered evidence
+    if (gameEngineResult.discoveredEvidence && gameEngineResult.discoveredEvidence.length > 0) {
+      console.log('🔍 Evidence discovered:', gameEngineResult.discoveredEvidence);
+      
+      // Update evidence state
+      setEvidence(gameEngineResult.newState.evidence);
+      
+      // Add evidence notifications
+      gameEngineResult.discoveredEvidence.forEach(evidenceId => {
+        const evidenceDef = evidenceDefinitions.find(e => e.id === evidenceId);
+        if (evidenceDef) {
+          setPendingNotifications(n => [...n, { 
+            type: 'evidence', 
+            item: evidenceDef 
+          }]);
+        }
+      });
+    }
+    
+    // Process new leads
+    if (gameEngineResult.newLeads && gameEngineResult.newLeads.length > 0) {
+      console.log('🎯 New leads discovered:', gameEngineResult.newLeads);
+      
+      setLeads(gameEngineResult.newState.leads);
+      
+      gameEngineResult.newLeads.forEach(leadDef => {
+        setPendingNotifications(n => [...n, { 
+          type: 'lead', 
+          item: leadDef 
+        }]);
+      });
+    }
+  }
   
   setConversationStateWithValidation(prev => ({
     ...prev,
@@ -1837,7 +2219,12 @@ if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
 
     console.log('📤 Sending to proxy with calculated values:', {
       currentCharacter: mentionedCharacter || currentCharacter,
-      pendingAction: conversationState.pendingAction
+      pendingAction: conversationState.pendingAction,
+      conversationPhase: conversationState.conversationPhase,
+      gameState: {
+        pendingAction: conversationState.pendingAction,
+        currentCharacter: mentionedCharacter || currentCharacter
+      }
     });
 
     const history = [...msgs, { speaker: detectiveName, content: actionText }].map(m => ({
@@ -1861,7 +2248,7 @@ if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
           leads: leads,
           detectiveName,
           conversation: conversationContext,
-          pendingAction: conversationState.pendingAction,
+          pendingAction: mentionedCharacter && mentionedCharacter !== currentCharacter ? 'MOVE_TO_CHARACTER' : conversationState.pendingAction,
           currentCharacter: mentionedCharacter || currentCharacter
         }
       }),
@@ -1887,13 +2274,7 @@ if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
     
     // If transitioning to a new character, handle the response differently
     if (isTransitioningToCharacter) {
-      // Only add the first stage direction (the scene transition)
-      if (stageDirections.length > 0) {
-        setMsgs(m => [...m, { 
-          speaker: 'System', 
-          content: `*${stageDirections[0].description}*` 
-        }]);
-      }
+      // Don't add any stage directions - we've already handled them manually
       
       // Only add dialogue responses from the character we're transitioning to
       const characterResponses = dialogueResponses.filter(obj => obj.speaker === mentionedCharacter);
@@ -1931,11 +2312,47 @@ if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
           setConversationState
         );
         
-        // Handle interview time costs
+        // Handle interview time costs and completion tracking
         if (!seenNpcInterviewed[mentionedCharacter]) {
           setTimeElapsed(te => te + ACTION_COSTS.interview);
           setTimeRemaining(tr => tr - ACTION_COSTS.interview);
           setSeenNpcInterviewed(s => ({ ...s, [mentionedCharacter]: true }));
+          
+          // Track interview completion for game engine
+          setInterviewsCompleted(prev => {
+            if (!prev.includes(mentionedCharacter)) {
+              console.log('📋 Interview completed:', mentionedCharacter);
+              return [...prev, mentionedCharacter];
+            }
+            return prev;
+          });
+          
+          // Trigger game engine to check for new leads
+          const gameEngineResult = applyAction({
+            timeElapsed: timeElapsed + ACTION_COSTS.interview,
+            timeRemaining: timeRemaining - ACTION_COSTS.interview,
+            evidence,
+            leads,
+            actionsPerformed,
+            interviewsCompleted: [...interviewsCompleted, mentionedCharacter],
+            interviewCounts
+          }, `interview ${mentionedCharacter}`);
+          
+          // Process any new leads discovered
+          if (gameEngineResult.newLeads && gameEngineResult.newLeads.length > 0) {
+            console.log('🎯 New leads discovered:', gameEngineResult.newLeads);
+            
+            // Update leads state
+            setLeads(prev => [...prev, ...gameEngineResult.newLeads.map(lead => lead.id)]);
+            
+            // Add lead notifications
+            gameEngineResult.newLeads.forEach(leadDef => {
+              setPendingNotifications(n => [...n, { 
+                type: 'lead', 
+                item: leadDef 
+              }]);
+            });
+          }
         }
       }
     } else {
@@ -1972,6 +2389,52 @@ if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
         // Add the message with validated speaker
         setMsgs(m => [...m, { speaker: speaker, content: obj.text }]);
 
+        // Extract information from character dialogue
+        if (speaker !== 'Navarro' && speaker !== detectiveName) {
+          const extracted = extractInformationFromDialogue(speaker, obj.text);
+          if (extracted.length > 0) {
+            setExtractedInformation(prev => {
+              const current = prev[speaker] || [];
+              const newInfo = extracted.filter(info => !current.includes(info));
+              if (newInfo.length > 0) {
+                console.log(`🔍 Extracted new information from ${speaker}:`, newInfo);
+                return {
+                  ...prev,
+                  [speaker]: [...current, ...newInfo]
+                };
+              }
+              return prev;
+            });
+          }
+        }
+
+        // Check for dynamic lead generation from NPC dialogue
+        if (speaker !== 'Navarro' && speaker !== detectiveName) {
+          const dialogueText = obj.text.toLowerCase();
+          
+          // Check for victim background information
+          if (dialogueText.includes('visitor') || dialogueText.includes('came by') || 
+              dialogueText.includes('man who') || dialogueText.includes('woman who') ||
+              dialogueText.includes('argued') || dialogueText.includes('friend') ||
+              dialogueText.includes('relationship') || dialogueText.includes('boyfriend') ||
+              dialogueText.includes('girlfriend')) {
+            
+            // Check if victim-background lead doesn't already exist
+            if (!leads.includes('victim-background')) {
+              console.log('🎯 Dynamic lead triggered: victim-background');
+              
+              const victimBackgroundLead = leadDefinitions.find(l => l.id === 'victim-background');
+              if (victimBackgroundLead) {
+                setLeads(prev => [...prev, 'victim-background']);
+                setPendingNotifications(n => [...n, { 
+                  type: 'lead', 
+                  item: victimBackgroundLead 
+                }]);
+              }
+            }
+          }
+        }
+
         // Track the conversation
         trackConversationHistory(
           speaker, 
@@ -1990,34 +2453,41 @@ if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
           }
         );
         
-        // Analyze and update conversation context for this dialogue
-        updateConversationContext(
-          speaker, 
-          obj.text, 
-          {
+        // Analyze and update conversation context for this dialogue (batch all updates)
+        if (speaker !== 'Navarro') {
+          const topics = extractTopics(obj.text);
+          const analysis = analyzeDialogueContext(obj.text, {
             currentTime: fmt(currentClock()),
             detectiveName: detectiveName,
             evidence: evidence,
             leads: leads
-          }, 
-          setConversationState
-        );
-        
-        // Update conversation topics if this is character dialogue
-        if (speaker !== 'Navarro' && speaker === conversationState.currentCharacter) {
-          // Extract potential topics from the dialogue
-          const topics = extractTopics(obj.text);
+          });
           
-          setConversationStateWithValidation(prev => ({
-            ...prev,
-            characters: {
-              ...prev.characters,
-              [speaker]: {
-                ...prev.characters[speaker],
-                topicsDiscussed: [...(prev.characters[speaker]?.topicsDiscussed || []), ...topics]
+          // Single batched state update to prevent race conditions
+          setConversationStateWithValidation(prev => {
+            const character = prev.characters[speaker] || {
+              topicsDiscussed: [],
+              mood: 'neutral',
+              responses: 0,
+              suspicionLevel: 0,
+              cooperationLevel: 5,
+              keyTopics: []
+            };
+            
+            return {
+              ...prev,
+              characters: {
+                ...prev.characters,
+                [speaker]: {
+                  ...character,
+                  topicsDiscussed: [...character.topicsDiscussed, ...topics, ...analysis.topics],
+                  mood: analysis.emotionalTone || character.mood,
+                  responses: character.responses + 1,
+                  keyTopics: [...(character.keyTopics || []), ...analysis.topics]
+                }
               }
-            }
-          }));
+            };
+          });
         }
         
         // Handle interview time costs
@@ -2046,14 +2516,14 @@ if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
         }]);
       }
       
-      // After all character dialogue is processed, then show the notifications
-      setTimeout(() => {
-        processPendingNotifications();
-      }, 500); // Short delay to ensure dialogue is processed first
+      // Process notifications immediately after dialogue
+      processPendingNotifications();
       
       // Reset conversation state if character is exiting the conversation
       if (conversationState.conversationPhase === 'CONCLUDING') {
+        console.log('🔚 CONCLUDING conversation detected, starting exit sequence');
         setTimeout(() => {
+          console.log('🔚 Executing exit sequence timeout');
           // Generate exit narrative if appropriate
           const exitNarrative = generateTransitionNarrative(
             conversationState.currentCharacter,
@@ -2068,6 +2538,18 @@ if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
           if (exitNarrative) {
             setMsgs(m => [...m, { speaker: 'System', content: exitNarrative }]);
           }
+          
+          // Add Navarro's transition dialogue
+          const navarroTransitions = [
+            "Alright, Detective. That gave us some useful information. What's our next move?",
+            "Good work getting that information. Where should we focus our investigation now?",
+            "That was helpful. What do you think we should do next?",
+            "Okay, we've got some new details to work with. What's your next step?",
+            "Nice interview. We're making progress. Where to next?"
+          ];
+          
+          const randomTransition = navarroTransitions[Math.floor(Math.random() * navarroTransitions.length)];
+          setMsgs(m => [...m, { speaker: 'Navarro', content: randomTransition }]);
           
           // Reset conversation state
           setConversationStateWithValidation(prev => ({
@@ -2431,14 +2913,12 @@ if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
                   <div style={{ marginBottom: '12px', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}>
                     <h4 style={{ color: '#000', margin: '0 0 4px 0', fontSize: '1.1rem' }}>Marvin Lott (Neighbor)</h4>
                     <ul style={{ color: '#444', paddingLeft: '20px', margin: '4px 0' }}>
-                      <li>Called police after hearing scream around 3:30 AM</li>
-                      <li>Appeared nervous during questioning</li>
-                      {leads.includes('interview-marvin') && (
-                        <>
-                          <li>Claims to have heard furniture moving after the scream</li>
-                          <li>Mentioned seeing someone leave the building around 3:45-4:00 AM</li>
-                        </>
-                      )}
+                      {extractedInformation['Marvin Lott'] ? 
+                        extractedInformation['Marvin Lott'].map((info, index) => (
+                          <li key={index}>{info}</li>
+                        )) : 
+                        <li>Interview in progress...</li>
+                      }
                     </ul>
                   </div>
                 )}
@@ -2447,9 +2927,12 @@ if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
                   <div style={{ marginBottom: '12px', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}>
                     <h4 style={{ color: '#000', margin: '0 0 4px 0', fontSize: '1.1rem' }}>Rachel Kim (Best Friend)</h4>
                     <ul style={{ color: '#444', paddingLeft: '20px', margin: '4px 0' }}>
-                      <li>Claims to have found the body at 8:00 AM</li>
-                      <li>Was supposed to meet Mia for breakfast</li>
-                      <li>Suggests looking into ex-boyfriend Jordan</li>
+                      {extractedInformation['Rachel Kim'] ? 
+                        extractedInformation['Rachel Kim'].map((info, index) => (
+                          <li key={index}>{info}</li>
+                        )) : 
+                        <li>Interview in progress...</li>
+                      }
                       {leads.includes('phone-records') && (
                         <li style={{ color: '#a00' }}>Phone records show call to Mia at 7:25 AM (inconsistency)</li>
                       )}
@@ -2461,9 +2944,12 @@ if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
                   <div style={{ marginBottom: '12px', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}>
                     <h4 style={{ color: '#000', margin: '0 0 4px 0', fontSize: '1.1rem' }}>Jordan Valez (Ex-Boyfriend)</h4>
                     <ul style={{ color: '#444', paddingLeft: '20px', margin: '4px 0' }}>
-                      <li>Claims to have been at The Lockwood Bar until midnight</li>
-                      <li>Has history of issues with the victim</li>
-                      <li>Says he and Mia recently started talking again</li>
+                      {extractedInformation['Jordan Valez'] ? 
+                        extractedInformation['Jordan Valez'].map((info, index) => (
+                          <li key={index}>{info}</li>
+                        )) : 
+                        <li>Interview in progress...</li>
+                      }
                       {leads.includes('phone-records') && (
                         <li>Has verifiable Uber receipt from 12:05 AM</li>
                       )}
@@ -2480,51 +2966,24 @@ if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
           <div style={{ marginBottom: '24px' }}>
             <h3 style={{ color: '#000', marginBottom: '8px', fontSize: '1.2rem' }}>Case Timeline</h3>
             <ul style={{ color: '#444', paddingLeft: '20px' }}>
-              <li style={{ marginBottom: '4px' }}><strong>7:45 AM</strong> - Body discovered</li>
-              <li style={{ marginBottom: '4px' }}><strong>3:30 AM</strong> - Marvin Lott heard scream</li>
-              {leads.includes('interview-marvin') && (
-                <li style={{ marginBottom: '4px' }}><strong>~3:45 AM</strong> - Marvin potentially saw someone leaving building</li>
+              <li style={{ marginBottom: '4px' }}><strong>2:00-4:00 AM</strong> - Estimated time of death</li>
+              {extractedInformation['Marvin Lott']?.some(info => info.includes('3:30 AM')) && (
+                <li style={{ marginBottom: '4px' }}><strong>3:30 AM</strong> - Marvin Lott heard scream</li>
+              )}
+              {extractedInformation['Marvin Lott']?.some(info => info.includes('furniture moving')) && (
+                <li style={{ marginBottom: '4px' }}><strong>~3:30 AM</strong> - Furniture movement heard after scream</li>
+              )}
+              {extractedInformation['Marvin Lott']?.some(info => info.includes('leave building')) && (
+                <li style={{ marginBottom: '4px' }}><strong>~3:45 AM</strong> - Someone seen leaving building</li>
               )}
               {leads.includes('phone-records') && (
                 <li style={{ marginBottom: '4px' }}><strong>7:25 AM</strong> - Rachel called Mia's phone (before claimed discovery)</li>
               )}
-              <li style={{ marginBottom: '4px' }}><strong>2:00-4:00 AM</strong> - Estimated time of death</li>
+              {extractedInformation['Rachel Kim']?.some(info => info.includes('8:00 AM')) && (
+                <li style={{ marginBottom: '4px' }}><strong>8:00 AM</strong> - Rachel claims to have found body</li>
+              )}
+              <li style={{ marginBottom: '4px' }}><strong>7:45 AM</strong> - Body discovered (official record)</li>
             </ul>
-          </div>
-          
-          {/* Active Leads Section */}
-          <div style={{ marginBottom: '24px' }}>
-            <h3 style={{ color: '#000', marginBottom: '8px', fontSize: '1.2rem' }}>Active Leads</h3>
-            {notes && notes.length > 0 ? (
-              <ul style={{ color: '#444', paddingLeft: '20px' }}>
-                {notes.map((desc, i) => {
-                  // Find the full lead definition for this description
-                  const leadDef = leadDefinitions.find(d => d.description === desc);
-                  return (
-                    <li key={i} style={{ 
-                      color: '#000', 
-                      marginBottom: '12px',
-                      fontWeight: leadDef?.isRedHerring ? 'normal' : 'bold'
-                    }}>
-                      {desc}
-                      {leadDef?.narrative && (
-                        <div style={{ 
-                          color: '#555', 
-                          fontStyle: 'italic',
-                          fontWeight: 'normal',
-                          fontSize: '0.9em',
-                          marginTop: '4px'
-                        }}>
-                          Note: {leadDef.narrative}
-                        </div>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p style={{ color: '#666', fontStyle: 'italic' }}>No active leads yet. Try investigating the crime scene or interviewing witnesses.</p>
-            )}
           </div>
           
           {/* Interview Hours Reminder */}

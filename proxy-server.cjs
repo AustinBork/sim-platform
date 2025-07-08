@@ -132,6 +132,12 @@ function detectSpeakerFromContext(messages, gameState, allCharacters) {
     return "Navarro";
   }
   
+  // If ending conversation, use the current character if available
+  if (gameState.pendingAction === 'END_CONVERSATION' && gameState.currentCharacter) {
+    console.log(`🎭 Ending conversation with: ${gameState.currentCharacter}`);
+    return gameState.currentCharacter;
+  }
+  
 
   
   // Get the last few messages for context
@@ -319,6 +325,8 @@ app.post('/chat', async (req, res) => {
   
   console.log('💬 Received game state:', gameState);
   console.log('💬 Last message:', messages[messages.length - 1]);
+  console.log('🔍 DEBUG: pendingAction =', gameState.pendingAction);
+  console.log('🔍 DEBUG: currentCharacter =', gameState.currentCharacter);
   
   // Build list of all possible characters
   const allCharacters = ["Navarro", "Marvin Lott", "Rachel Kim", "Jordan Valez"];
@@ -346,19 +354,24 @@ Evidence: ${gameState.evidence?.join(', ') || 'None yet'}
 Leads: ${gameState.leads?.join(', ') || 'None yet'}
 
 CRITICAL DIALOGUE FORMAT INSTRUCTIONS:
-You MUST respond using ONLY the following sequence of JSON objects, each on its own line:
+${gameState.pendingAction === 'MOVE_TO_CHARACTER' ? 
+`You MUST respond with ONLY dialogue - NO stage directions. Use this format:
+{"type":"dialogue","speaker":"${suggestedSpeaker}","text":"<their line>"}
+
+DO NOT include any stage directions. The detective has already approached and knocked on the door.` :
+`You MUST respond using ONLY the following sequence of JSON objects, each on its own line:
 
 1. First, a stage direction: {"type":"stage","description":"<action description>"}
 2. Then, a character's dialogue: {"type":"dialogue","speaker":"${suggestedSpeaker}","text":"<their line>"}
 
-DO NOT include any text, explanations, or commentary outside these JSON objects.
+DO NOT include any text, explanations, or commentary outside these JSON objects.`}
 DO NOT use markdown formatting, asterisks, or any other non-JSON syntax.
 The speaker MUST be "${suggestedSpeaker}" unless there is a compelling reason for another character to interject.
 
 ${conversationContext}
 
 ${gameState.pendingAction === 'MOVE_TO_CHARACTER' ? 
-    `The detective is approaching ${suggestedSpeaker} for the first time. Generate appropriate stage direction for this transition, and have ${suggestedSpeaker} greet the detective.` :
+    `The detective has already approached ${suggestedSpeaker} and knocked on the door. DO NOT generate any stage directions - only generate dialogue. Have ${suggestedSpeaker} respond to the door knock as if greeting the detective for the first time.` :
     gameState.pendingAction === 'CONTINUE_CONVERSATION' ?
     `The detective is continuing the conversation with ${suggestedSpeaker}. Have ${suggestedSpeaker} respond to the detective's question with new information that hasn't been shared before.` :
     gameState.pendingAction === 'END_CONVERSATION' ?
