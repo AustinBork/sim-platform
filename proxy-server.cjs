@@ -138,7 +138,12 @@ function detectSpeakerFromContext(messages, gameState, allCharacters) {
     return gameState.currentCharacter;
   }
   
-
+  // CRITICAL FIX: If we have currentCharacter, prioritize that over message parsing
+  // This maintains conversation context during aggressive/accusatory dialogue
+  if (gameState.currentCharacter && gameState.currentCharacter !== 'Navarro') {
+    console.log(`🎭 Maintaining conversation with current character: ${gameState.currentCharacter}`);
+    return gameState.currentCharacter;
+  }
   
   // Get the last few messages for context
   const recentMessages = messages.slice(-3);

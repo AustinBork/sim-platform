@@ -162,13 +162,31 @@ export function discoverEvidence(actionText, currentEvidence) {
   const lowerAction = actionText.toLowerCase();
   const newEvidence = [];
   
-  // Check if action is a comprehensive room search
+  // Enhanced room search detection with natural language and typo handling
   const isRoomSearch = 
+    // Original exact patterns
     lowerAction.includes("photograph room") || 
     lowerAction.includes("take photos") || 
     lowerAction.includes("photograph scene") || 
     lowerAction.includes("document scene") ||
-    lowerAction.includes("take pictures");
+    lowerAction.includes("take pictures") ||
+    
+    // Enhanced photo patterns with typos
+    lowerAction.includes("pcitures") || 
+    lowerAction.includes("picures") || 
+    lowerAction.includes("picture") || 
+    lowerAction.includes("photo") ||
+    lowerAction.includes("pics") ||
+    lowerAction.includes("snap") ||
+    lowerAction.includes("capture") ||
+    
+    // Natural language patterns for photography
+    (lowerAction.includes("get") && (lowerAction.includes("picture") || lowerAction.includes("photo") || lowerAction.includes("pic") || lowerAction.includes("pcitures"))) ||
+    (lowerAction.includes("take") && (lowerAction.includes("picture") || lowerAction.includes("photo") || lowerAction.includes("pic") || lowerAction.includes("pcitures"))) ||
+    
+    // Scene documentation patterns
+    (lowerAction.includes("document") && (lowerAction.includes("place") || lowerAction.includes("scene") || lowerAction.includes("room") || lowerAction.includes("apartment"))) ||
+    (lowerAction.includes("record") && (lowerAction.includes("place") || lowerAction.includes("scene") || lowerAction.includes("room") || lowerAction.includes("apartment")));
     
   // Process each evidence definition
   for (const evidence of evidenceDefinitions) {

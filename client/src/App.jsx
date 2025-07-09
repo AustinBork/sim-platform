@@ -1323,14 +1323,42 @@ function extractTopics(text) {
 
 function isGeneralInvestigativeAction(text) {
   const lowerText = text.toLowerCase();
-  const actionKeywords = [
-    'photograph', 'photo', 'picture', 'take pic', 
+  
+  // Enhanced photo/documentation detection with typo handling
+  const photoPatterns = [
+    'photograph', 'photo', 'picture', 'pic', 'pics',
+    'pcitures', 'picures', 'pitcures', 'pictues', // common typos
+    'take pic', 'take photo', 'take picture', 'snap', 'capture',
+    'document', 'record', 'get some pic', 'get pic', 'get photo'
+  ];
+  
+  // Investigation action keywords
+  const investigationKeywords = [
     'examine', 'check', 'look at', 'search', 'investigate',
-    'analyze', 'test', 'document', 'collect', 'gather',
+    'analyze', 'test', 'collect', 'gather', 'inspect',
     'forensic', 'lab', 'send to', 'process'
   ];
   
-  return actionKeywords.some(keyword => lowerText.includes(keyword));
+  // Natural language investigation patterns
+  const investigationPatterns = [
+    'crime scene', 'scene', 'evidence', 'clue', 'body',
+    'apartment', 'room', 'door', 'window', 'floor',
+    'wall', 'furniture', 'belongings', 'phone'
+  ];
+  
+  // Check for photo/documentation actions
+  const hasPhotoAction = photoPatterns.some(pattern => lowerText.includes(pattern));
+  
+  // Check for investigation keywords
+  const hasInvestigationKeyword = investigationKeywords.some(keyword => lowerText.includes(keyword));
+  
+  // Check for investigation context (scene, evidence, etc.)
+  const hasInvestigationContext = investigationPatterns.some(pattern => lowerText.includes(pattern));
+  
+  // Enhanced logic: photo action OR investigation keyword OR (investigation context + action words)
+  const hasActionWords = /\b(get|take|do|go|start|begin|let|should|need|want)\b/.test(lowerText);
+  
+  return hasPhotoAction || hasInvestigationKeyword || (hasInvestigationContext && hasActionWords);
 }
 
   // Helper function to get a contextual Navarro affirmation
@@ -1804,16 +1832,78 @@ function isGeneralInvestigativeAction(text) {
       
       // Process discovered evidence and leads
       if (gameEngineResult.discoveredEvidence && gameEngineResult.discoveredEvidence.length > 0) {
+        console.log('🔍 Evidence discovered in handleInvestigativeAction:', gameEngineResult.discoveredEvidence);
         setEvidence(gameEngineResult.newState.evidence);
+        
+        // Collect all evidence and commentary for consolidated messages
+        const evidenceDescriptions = [];
+        const commentaries = [];
+        
         gameEngineResult.discoveredEvidence.forEach(evidenceId => {
           const evidenceDef = evidenceDefinitions.find(e => e.id === evidenceId);
           if (evidenceDef) {
-            setPendingNotifications(n => [...n, { 
-              type: 'evidence', 
-              item: evidenceDef 
-            }]);
+            console.log('🔍 Processing evidence notification in main flow for:', evidenceId, evidenceDef);
+            
+            // Collect evidence description
+            evidenceDescriptions.push(`• ${evidenceDef.description}`);
+            
+            // Show notepad notification immediately (for popup)
+            showNotepadNotification('evidence', evidenceDef);
+            
+            // Collect Navarro's commentary
+            const commentary = getEvidenceCommentary(evidenceDef.id);
+            if (commentary) {
+              commentaries.push(commentary);
+            }
           }
         });
+        
+        // Add single consolidated evidence discovery message
+        if (evidenceDescriptions.length > 0) {
+          setMsgs(m => [
+            ...m, 
+            { 
+              speaker: 'System', 
+              content: `🔍 Evidence discovered:\n${evidenceDescriptions.join('\n')}`
+            }
+          ]);
+        }
+        
+        // Add single consolidated Navarro commentary message
+        if (commentaries.length > 0) {
+          setMsgs(m => [
+            ...m,
+            {
+              speaker: 'Navarro',
+              content: commentaries.join(' ')
+            }
+          ]);
+        }
+        
+        // Add scene ending transition after evidence discovery
+        setTimeout(() => {
+          console.log('🔚 Adding scene ending transition after evidence discovery');
+          
+          // Add system message indicating scene completion
+          setMsgs(m => [...m, { 
+            speaker: 'System', 
+            content: '*You finish documenting the crime scene thoroughly, capturing all visible evidence.*'
+          }]);
+          
+          // Add Navarro's follow-up question
+          setMsgs(m => [...m, { 
+            speaker: 'Navarro', 
+            content: 'Good work. We\'ve got a solid foundation now. What\'s our next move, Detective?'
+          }]);
+          
+          // Reset conversation state to indicate scene completion
+          setConversationStateWithValidation(prev => ({
+            ...prev,
+            currentCharacter: null,
+            pendingAction: null,
+            conversationPhase: 'NONE'
+          }));
+        }, 500);
       }
       
       if (gameEngineResult.newLeads && gameEngineResult.newLeads.length > 0) {
@@ -1999,6 +2089,11 @@ if (isInvestigative) {
   
   // Handle investigative action processing
   handleInvestigativeAction(input);
+  
+  // For investigative actions, end here to prevent duplicate AI processing
+  setLoading(false);
+  setInput('');
+  return;
 }
 
 // Update conversation state based on context
@@ -2089,6 +2184,7 @@ if (conversationState.conversationPhase === 'CONCLUDING') {
   }));
 } else if (currentCharacter && !isEnding) {
   // Continuing conversation with current character
+  console.log(`🔧 Continuing conversation with ${currentCharacter}`);
   setConversationStateWithValidation(prev => ({
     ...prev,
     pendingAction: 'CONTINUE_CONVERSATION',
@@ -2516,8 +2612,12 @@ if (conversationState.conversationPhase === 'CONCLUDING') {
         }]);
       }
       
-      // Process notifications immediately after dialogue
-      processPendingNotifications();
+      // Scene ending transition handled in main investigative flow now
+      
+      // Process notifications immediately after dialogue (if any remain)
+      if (pendingNotifications.length > 0) {
+        processPendingNotifications();
+      }
       
       // Reset conversation state if character is exiting the conversation
       if (conversationState.conversationPhase === 'CONCLUDING') {
