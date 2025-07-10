@@ -415,6 +415,9 @@ Ensure each JSON object is on its own line with no additional text.
   });
   const text = response.choices[0].message.content;
   console.log('🔴 RAW MODEL OUTPUT:', text);
+  console.log('🔴 OUTPUT LENGTH:', text.length);
+  console.log('🔴 OUTPUT FIRST 100 CHARS:', text.substring(0, 100));
+  console.log('🔴 OUTPUT LAST 100 CHARS:', text.substring(Math.max(0, text.length - 100)));
   
   // IMPROVED: Enhanced parsing for both JSON and text formats
   let result = [];

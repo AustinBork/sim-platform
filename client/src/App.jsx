@@ -305,6 +305,20 @@ const currentClock = () => START_OF_DAY + timeElapsed;
       // Call the original updater to get the new state
       const newState = updater(prevState);
       
+      // Enhanced validation for state consistency
+      if (newState.currentCharacter && newState.conversationPhase === 'NONE') {
+        console.warn('⚠️ State inconsistency: currentCharacter set but conversationPhase is NONE');
+        // Fix automatically
+        newState.conversationPhase = 'GREETING';
+      }
+      
+      if (!newState.currentCharacter && newState.conversationPhase !== 'NONE') {
+        console.warn('⚠️ State inconsistency: conversationPhase active but no currentCharacter');
+        // Fix automatically
+        newState.conversationPhase = 'NONE';
+        newState.pendingAction = null;
+      }
+      
       // Validate the state transition
       ConversationDebug.validateStateTransition(prevState, newState);
       
@@ -392,6 +406,40 @@ function recordTopicDiscussion(character, topics, setState) {
       }
     };
   });
+}
+
+// Add this function to sanitize data for API requests
+function sanitizeForJSON(obj) {
+  if (obj === null || obj === undefined) return obj;
+  
+  if (typeof obj === 'string') {
+    // Remove or replace problematic Unicode characters
+    return obj
+      .replace(/[\u{1F600}-\u{1F64F}]/gu, '') // Emoticons
+      .replace(/[\u{1F300}-\u{1F5FF}]/gu, '') // Misc Symbols
+      .replace(/[\u{1F680}-\u{1F6FF}]/gu, '') // Transport
+      .replace(/[\u{1F1E0}-\u{1F1FF}]/gu, '') // Flags
+      .replace(/[\u{2600}-\u{26FF}]/gu, '')   // Misc symbols
+      .replace(/[\u{2700}-\u{27BF}]/gu, '')   // Dingbats
+      .replace(/[\u{FE00}-\u{FE0F}]/gu, '')   // Variation Selectors
+      .replace(/[\u{200D}]/gu, '')            // Zero Width Joiner
+      .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Control characters
+      .trim();
+  }
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => sanitizeForJSON(item));
+  }
+  
+  if (typeof obj === 'object') {
+    const sanitized = {};
+    for (const [key, value] of Object.entries(obj)) {
+      sanitized[sanitizeForJSON(key)] = sanitizeForJSON(value);
+    }
+    return sanitized;
+  }
+  
+  return obj;
 }
 
 // Add this function to check if a topic has been discussed with a character
@@ -1909,11 +1957,35 @@ function isGeneralInvestigativeAction(text) {
       if (gameEngineResult.newLeads && gameEngineResult.newLeads.length > 0) {
         console.log('🎯 New leads discovered:', gameEngineResult.newLeads);
         setLeads(prev => [...prev, ...gameEngineResult.newLeads.map(lead => lead.id)]);
+        
+        // Process lead notifications immediately during investigative actions
         gameEngineResult.newLeads.forEach(leadDef => {
-          setPendingNotifications(n => [...n, { 
-            type: 'lead', 
-            item: leadDef 
-          }]);
+          // Show lead notification in chat immediately
+          setTimeout(() => {
+            setMsgs(m => [
+              ...m, 
+              { 
+                speaker: 'System', 
+                content: `🕵️ New lead unlocked: ${leadDef.description}`
+              }
+            ]);
+            
+            // Show notepad notification
+            showNotepadNotification('lead', leadDef);
+            
+            // If the lead has a narrative, add that as a follow-up from Navarro
+            if (leadDef.narrative) {
+              setTimeout(() => {
+                setMsgs(m => [
+                  ...m,
+                  {
+                    speaker: 'Navarro',
+                    content: leadDef.narrative
+                  }
+                ]);
+              }, 100);
+            }
+          }, 200);
         });
       }
     }
@@ -2049,9 +2121,95 @@ function isGeneralInvestigativeAction(text) {
     }
   }
 
+  // —— STATE MANAGEMENT UTILITIES ——
+  
+  // Enhanced character memory persistence
+  const preserveCharacterMemory = (characterName, interactionData, setState) => {
+    if (!characterName) return;
+    
+    setState(prevState => {
+      const existingCharacter = prevState.characters[characterName] || {};
+      
+      return {
+        ...prevState,
+        characters: {
+          ...prevState.characters,
+          [characterName]: {
+            ...existingCharacter,
+            ...interactionData,
+            lastInteractionTime: currentClock(),
+            // Maintain conversation continuity
+            conversationHistory: [
+              ...(existingCharacter.conversationHistory || []),
+              {
+                timestamp: currentClock(),
+                topics: interactionData.topicsDiscussed || [],
+                mood: interactionData.mood || 'neutral',
+                suspicionLevel: interactionData.suspicionLevel || 0
+              }
+            ].slice(-5) // Keep only last 5 interactions
+          }
+        }
+      };
+    });
+  };
+
+  // Reset conversation state while preserving character memory
+  const resetToNeutralState = () => {
+    console.log('🔄 Resetting to neutral state while preserving character memory');
+    
+    // First preserve current character memory if there's an active conversation
+    if (conversationState.currentCharacter) {
+      preserveCharacterMemory(
+        conversationState.currentCharacter,
+        conversationState.characters[conversationState.currentCharacter] || {},
+        setConversationStateWithValidation
+      );
+    }
+    
+    setConversationStateWithValidation(prev => ({
+      ...prev,
+      // Clear transient state
+      currentCharacter: null,
+      conversationPhase: 'NONE',
+      pendingAction: null,
+      lastTopicDetected: null,
+      consecutiveQuestions: 0,
+      
+      // Preserve ALL persistent character memory
+      characters: prev.characters || {},
+      globalTopics: prev.globalTopics || []
+    }));
+  };
+  
+  // Classify action type for proper routing
+  const classifyAction = (input) => {
+    const isInvestigativeAction = isGeneralInvestigativeAction(input);
+    const mentionedCharacter = detectCharacterMention(
+      input, 
+      conversationState,
+      {
+        location: LOCATION,
+        time: currentClock(),
+        evidence: evidence,
+        leads: leads
+      }
+    );
+    
+    if (isInvestigativeAction) return 'INVESTIGATIVE';
+    if (mentionedCharacter) return 'CHARACTER_INTERACTION';
+    if (input.toLowerCase().includes('navarro') && !mentionedCharacter) return 'ASK_NAVARRO';
+    return 'GENERAL';
+  };
+
   // —— PROXY CALL ——
 //send message
 const sendMessage = async () => {
+  console.log('🚀 Starting sendMessage with current state:', {
+    conversationPhase: conversationState.conversationPhase,
+    currentCharacter: conversationState.currentCharacter,
+    pendingAction: conversationState.pendingAction
+  });
   if (!input.trim()) return;
   
   const actionText = input; // Define actionText at the start
@@ -2059,14 +2217,11 @@ const sendMessage = async () => {
   setMsgs(m => [...m, { speaker: detectiveName, content: actionText }]);
   setLoading(true);
   
-  // Extract current character and state from conversationState
+  // Step 1: Extract current character and state from conversationState BEFORE any modifications
   const currentCharacter = conversationState.currentCharacter;
   const pendingAction = conversationState.pendingAction;
   
-  // Check if the message is ending a conversation
-  const isEnding = enhancedConversationEndingDetection(actionText, conversationState);
-  
-  // Check if starting a new conversation with a character
+  // Step 2: Detect targets and classify action type
   const mentionedCharacter = detectCharacterMention(
     actionText, 
     conversationState,
@@ -2077,10 +2232,43 @@ const sendMessage = async () => {
       leads: leads
     }
   );
+  
+  const actionType = classifyAction(actionText);
+  console.log('🎯 Action classified as:', actionType, 'with mentioned character:', mentionedCharacter);
+  
+  // Check if the message is ending a conversation
+  const isEnding = enhancedConversationEndingDetection(actionText, conversationState);
+  
+  // Step 3: Handle state transitions based on action type and context
+  if (actionType === 'INVESTIGATIVE' && !mentionedCharacter) {
+    // Pure investigative actions reset to neutral state
+    resetToNeutralState();
+    await new Promise(resolve => setTimeout(resolve, 10));
+  } else if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
+    // Transitioning to a new character - preserve memory but change context
+    console.log(`🔄 Transitioning from ${currentCharacter || 'none'} to ${mentionedCharacter}`);
+    
+    // Handle scene transition properly
+    handleSceneTransition(
+      currentCharacter,
+      mentionedCharacter,
+      'MOVE_TO_CHARACTER',
+      setConversationStateWithValidation,
+      {
+        currentTime: currentClock(),
+        setMsgs,
+        setTimeElapsed,
+        setTimeRemaining,
+        detectiveName,
+        actionText
+      }
+    );
+    
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
 
-// Process investigative actions first (they can happen independently)
-const isInvestigative = isGeneralInvestigativeAction(input);
-if (isInvestigative) {
+// Step 3: Process action based on type
+if (actionType === 'INVESTIGATIVE') {
   console.log('🔍 Processing investigative action:', input);
   
   // Add Navarro's affirmation for investigation
@@ -2104,11 +2292,14 @@ if (conversationState.conversationPhase === 'CONCLUDING') {
     pendingAction: 'END_CONVERSATION'
   }));
 } else if (mentionedCharacter && mentionedCharacter !== currentCharacter) {
-  // First add Navarro's affirmation
+  // Character transition already handled above - add Navarro affirmation
+  console.log('✅ Character transition already processed, adding Navarro affirmation');
+  
+  // Add Navarro's affirmation for character transitions
   const affirmation = getNavarroAffirmation(actionText);
   setMsgs(m => [...m, { speaker: 'Navarro', content: affirmation }]);
   
-  // Automatically add stage direction for approaching the character
+  // Add automatic stage direction for approaching the character  
   const isFirstTime = !conversationState.characters[mentionedCharacter]?.visitCount || 
                      conversationState.characters[mentionedCharacter]?.visitCount === 0;
   
@@ -2125,29 +2316,6 @@ if (conversationState.conversationPhase === 'CONCLUDING') {
       content: `*You knock on the door.*` 
     }]);
   }
-  
-  // Starting conversation with new character - handle scene transition immediately
-  handleSceneTransition(
-    currentCharacter,
-    mentionedCharacter,
-    'MOVE_TO_CHARACTER',
-    setConversationState,
-    {
-      currentTime: currentClock(),
-      setMsgs,
-      setTimeElapsed,
-      setTimeRemaining,
-      conversationState
-    }
-  );
-  
-  // Update conversation state for the proxy request
-  setConversationStateWithValidation(prev => ({
-    ...prev,
-    currentCharacter: mentionedCharacter,
-    pendingAction: 'MOVE_TO_CHARACTER',
-    conversationPhase: 'GREETING'
-  }));
 } else if (currentCharacter && isEnding) {
   // Assess conversation completeness before ending
   const completeness = assessConversationCompleteness(currentCharacter, conversationState, extractedInformation);
@@ -2190,107 +2358,18 @@ if (conversationState.conversationPhase === 'CONCLUDING') {
     pendingAction: 'CONTINUE_CONVERSATION',
     conversationPhase: 'QUESTIONING'
   }));
-  
-  // Add scene transition for crime scene investigation
-  if (input.toLowerCase().includes('apartment') || input.toLowerCase().includes('crime scene') || 
-      input.toLowerCase().includes('back to') || input.toLowerCase().includes('scene') ||
-      input.toLowerCase().includes('photograph') || input.toLowerCase().includes('document') ||
-      input.toLowerCase().includes('examine') || input.toLowerCase().includes('investigate')) {
-    
-    // Check if this is a return visit or initial investigation
-    const isReturning = input.toLowerCase().includes('back to') || input.toLowerCase().includes('return');
-    const transitionMessage = isReturning 
-      ? `*You return to ${LOCATION} to investigate further.*`
-      : `*You begin investigating ${LOCATION} thoroughly.*`;
-      
-    setMsgs(m => [...m, { 
-      speaker: 'System', 
-      content: transitionMessage
-    }]);
-  }
-  
-  handleSceneTransition(
-    currentCharacter,
-    null,
-    'TRANSITION_TO_INVESTIGATION',
-    setConversationState,
-    {
-      currentTime: currentClock(),
-      setMsgs,
-      setTimeElapsed,
-      setTimeRemaining,
-      conversationState
-    }
-  );
-  
-  // Process the investigative action with game engine
-  const gameEngineResult = applyAction({
-    timeElapsed,
-    timeRemaining,
-    evidence,
-    leads,
-    actionsPerformed,
-    interviewsCompleted,
-    interviewCounts
-  }, input);
-  
-  if (gameEngineResult.error) {
-    setMsgs(m => [...m, { speaker: 'Navarro', content: `❌ ${gameEngineResult.error}` }]);
-  } else {
-    // Update game state
-    setTimeElapsed(gameEngineResult.newState.timeElapsed);
-    setTimeRemaining(gameEngineResult.newState.timeRemaining);
-    setActionsPerformed(gameEngineResult.newState.actionsPerformed);
-    
-    // Process discovered evidence
-    if (gameEngineResult.discoveredEvidence && gameEngineResult.discoveredEvidence.length > 0) {
-      console.log('🔍 Evidence discovered:', gameEngineResult.discoveredEvidence);
-      
-      // Update evidence state
-      setEvidence(gameEngineResult.newState.evidence);
-      
-      // Add evidence notifications
-      gameEngineResult.discoveredEvidence.forEach(evidenceId => {
-        const evidenceDef = evidenceDefinitions.find(e => e.id === evidenceId);
-        if (evidenceDef) {
-          setPendingNotifications(n => [...n, { 
-            type: 'evidence', 
-            item: evidenceDef 
-          }]);
-        }
-      });
-    }
-    
-    // Process new leads
-    if (gameEngineResult.newLeads && gameEngineResult.newLeads.length > 0) {
-      console.log('🎯 New leads discovered:', gameEngineResult.newLeads);
-      
-      setLeads(gameEngineResult.newState.leads);
-      
-      gameEngineResult.newLeads.forEach(leadDef => {
-        setPendingNotifications(n => [...n, { 
-          type: 'lead', 
-          item: leadDef 
-        }]);
-      });
-    }
-  }
-  
-  setConversationStateWithValidation(prev => ({
-    ...prev,
-    currentCharacter: null,
-    pendingAction: 'INVESTIGATE',
-    conversationPhase: 'NONE'
-  }));
-} else if (input.toLowerCase().includes('navarro') || 
-           input.toLowerCase().includes('partner') || 
-           input.toLowerCase().includes('what do you think')) {
-  // Asking Navarro directly
+} else if (actionType === 'ASK_NAVARRO') {
+  console.log('🤝 Processing Navarro consultation');
   setConversationStateWithValidation(prev => ({
     ...prev,
     pendingAction: 'ASK_NAVARRO',
+    currentCharacter: 'Navarro',
     conversationPhase: 'NONE'
   }));
+} else if (actionType === 'GENERAL') {
+  console.log('💬 Processing general conversation/continuation');
+  // For general conversation, preserve current state
+  // No specific state changes needed
 }
   
   // This code replaces the try/catch block in the sendMessage function
@@ -2330,24 +2409,27 @@ if (conversationState.conversationPhase === 'CONCLUDING') {
       content: m.content
     }));
     
+    // Sanitize data before sending to API
+    const sanitizedPayload = sanitizeForJSON({
+      messages: history,
+      gameState: {
+        currentTime: fmt(currentClock()),
+        timeRemaining: fmt(timeRemaining),
+        location: LOCATION,
+        mode,
+        evidence: evidence,
+        leads: leads,
+        detectiveName,
+        conversation: conversationContext,
+        pendingAction: mentionedCharacter && mentionedCharacter !== currentCharacter ? 'MOVE_TO_CHARACTER' : conversationState.pendingAction,
+        currentCharacter: mentionedCharacter || currentCharacter
+      }
+    });
+
     const res = await fetch('http://localhost:3001/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: history,
-        gameState: {
-          currentTime: fmt(currentClock()),
-          timeRemaining: fmt(timeRemaining),
-          location: LOCATION,
-          mode,
-          evidence: evidence,
-          leads: leads,
-          detectiveName,
-          conversation: conversationContext,
-          pendingAction: mentionedCharacter && mentionedCharacter !== currentCharacter ? 'MOVE_TO_CHARACTER' : conversationState.pendingAction,
-          currentCharacter: mentionedCharacter || currentCharacter
-        }
-      }),
+      body: JSON.stringify(sanitizedPayload),
     });
     
     const { text } = await res.json();
@@ -2360,6 +2442,17 @@ if (conversationState.conversationPhase === 'CONCLUDING') {
 
     console.log('💬 RAW STREAM LINES:', lines);
     console.log('💬 PARSED OBJECTS:', parsed);
+    
+    // Debug: Log the actual dialogue text being processed
+    if (parsed.length > 0) {
+      parsed.forEach((obj, index) => {
+        console.log(`💬 DEBUG Object ${index}:`, obj);
+        if (obj.type === 'dialogue') {
+          console.log(`💬 DIALOGUE TEXT: "${obj.text}"`);
+          console.log(`💬 DIALOGUE SPEAKER: "${obj.speaker}"`);
+        }
+      });
+    }
 
     // Process responses in the correct order
     const stageDirections = parsed.filter(obj => obj.type === 'stage');
