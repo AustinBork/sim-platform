@@ -41,19 +41,3 @@ git push
 
 
 
-Overview of the System
-From the code and screenshots, I can see a detective game called "First 48: Homicide Investigation" where the player takes on the role of a detective solving a murder case. The system includes:
-
-A React frontend (App.js) that handles the game UI and state
-A proxy server (proxy-server.cjs) that interfaces with an AI model to generate character dialogue
-A game engine (gameEngine.js) that manages game mechanics and state changes
-Terminal logs showing communication issues between components
-
-
-
-Refactor for Robustness: The current tight coupling between components makes debugging difficult. Consider refactoring to use a more state-driven approach like Redux or Context API.
-AI Response Improvements: The AI responses need more structure and consistency. Consider using a more structured approach with defined response templates.
-Fallback Mechanisms: Add more robust fallback mechanisms when components fail to communicate properly.
-Documentation: Add better documentation for the game mechanics and expected behavior to make future debugging easier.
-
-This comprehensive fix should address all the major issues with the game and get it back to a fully functional state. The approach focuses on fixing the core mechanics first and then addressing UI and polish issues.
