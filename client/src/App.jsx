@@ -298,6 +298,11 @@ const currentClock = () => START_OF_DAY + timeElapsed;
     "Need to establish a timeline of events leading to the murder."
   ]);
 
+  // Typewriter effect state
+  const [typewriterQueue, setTypewriterQueue] = useState([]);
+  const [currentlyTyping, setCurrentlyTyping] = useState(null);
+  const [displayedMsgs, setDisplayedMsgs] = useState([]);
+  const typewriterTimerRef = useRef(null);
 
    // Create an enhanced conversation state setter with validation
   function setConversationStateWithValidation(updater) {
@@ -653,9 +658,124 @@ const isEndingConversation = useCallback((text, currentState) => {
   return isEnding;
   }, [timeElapsed, START_OF_DAY]); 
 
+  // —— TYPEWRITER EFFECT FUNCTIONS ——
+  // Process typewriter queue and start typing next message
+  const processTypewriterQueue = useCallback(() => {
+    if (currentlyTyping || typewriterQueue.length === 0) return;
+    
+    const nextMessage = typewriterQueue[0];
+    setCurrentlyTyping(nextMessage);
+    setTypewriterQueue(prev => prev.slice(1));
+    
+    // Start typing animation
+    let charIndex = 0;
+    const content = nextMessage.content;
+    const typingSpeed = 25; // milliseconds per character (faster for gaming experience)
+    
+    const typeNextChar = () => {
+      if (charIndex <= content.length) {
+        // Update displayed messages with partial content
+        setDisplayedMsgs(prev => {
+          const updated = [...prev];
+          const msgIndex = updated.findIndex(m => m.id === nextMessage.id);
+          if (msgIndex !== -1) {
+            updated[msgIndex] = {
+              ...updated[msgIndex],
+              displayContent: content.substring(0, charIndex),
+              isTyping: charIndex < content.length
+            };
+          }
+          return updated;
+        });
+        
+        charIndex++;
+        
+        if (charIndex <= content.length) {
+          typewriterTimerRef.current = setTimeout(typeNextChar, typingSpeed);
+        } else {
+          // Typing complete
+          setCurrentlyTyping(null);
+          // Auto-scroll after message is complete
+          setTimeout(() => {
+            scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+          }, 100);
+        }
+      }
+    };
+    
+    typeNextChar();
+  }, [currentlyTyping, typewriterQueue]);
+
+  // Add new message to typewriter system
+  const addMessageWithTypewriter = useCallback((newMessage) => {
+    const messageWithId = {
+      ...newMessage,
+      id: Date.now() + Math.random(), // Unique ID for tracking
+      displayContent: '',
+      isTyping: false
+    };
+    
+    // Add to displayed messages immediately (but with empty content)
+    setDisplayedMsgs(prev => [...prev, messageWithId]);
+    
+    // Add to typing queue
+    setTypewriterQueue(prev => [...prev, messageWithId]);
+  }, []);
+
+  // Process typewriter queue when it changes
+  useEffect(() => {
+    if (typewriterQueue.length > 0 && !currentlyTyping) {
+      const timer = setTimeout(processTypewriterQueue, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [typewriterQueue.length, currentlyTyping, processTypewriterQueue]);
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (typewriterTimerRef.current) {
+        clearTimeout(typewriterTimerRef.current);
+      }
+    };
+  }, []);
+
+
+  // Sync msgs with typewriter system when msgs changes
+  useEffect(() => {
+    // Compare msgs with current displayedMsgs to find new messages
+    const currentMsgCount = displayedMsgs.length;
+    const newMsgCount = msgs.length;
+    
+    if (newMsgCount > currentMsgCount) {
+      // New messages have been added
+      const newMessages = msgs.slice(currentMsgCount);
+      newMessages.forEach(msg => {
+        addMessageWithTypewriter(msg);
+      });
+    } else if (newMsgCount < currentMsgCount) {
+      // Messages were reset (like at game start)
+      const msgsWithTypewriter = msgs.map(msg => ({
+        ...msg,
+        id: Date.now() + Math.random(),
+        displayContent: '',
+        isTyping: false
+      }));
+      
+      setDisplayedMsgs(msgsWithTypewriter);
+      setTypewriterQueue(msgsWithTypewriter);
+      setCurrentlyTyping(null);
+      
+      // Clear any active timer
+      if (typewriterTimerRef.current) {
+        clearTimeout(typewriterTimerRef.current);
+        typewriterTimerRef.current = null;
+      }
+    }
+  }, [msgs, addMessageWithTypewriter, displayedMsgs.length]);
+
   // —— DERIVED NOTES STATE ——
   // Function to update detective thoughts based on game state
-  const updateDetectiveThoughts = () => {
+  const updateDetectiveThoughts = useCallback(() => {
     // Start with default thoughts
     const defaultThoughts = [];
     
@@ -689,12 +809,12 @@ const isEndingConversation = useCallback((text, currentState) => {
     }
     
     setDetectiveThoughts(defaultThoughts);
-  };
+  }, [leads, interviewsCompleted, actionsPerformed, timeElapsed]);
 
   // Update detective thoughts when relevant state changes
   useEffect(() => {
     updateDetectiveThoughts();
-  }, [leads, interviewsCompleted, actionsPerformed, timeElapsed]);
+  }, [updateDetectiveThoughts]);
   
   // Function to show notepad notification
   const showNotepadNotification = (type, item) => {
@@ -1524,6 +1644,7 @@ function isGeneralInvestigativeAction(text) {
       { speaker: 'Navarro', content: navarroIntro }
     ]);
     
+    // Initialize game state first
     setPhase('chat');
     setTimeElapsed(0);
     setTimeRemaining(48 * 60);
@@ -1540,6 +1661,44 @@ function isGeneralInvestigativeAction(text) {
       conversationPhase: 'NONE',
       lastResponseTime: null
     });
+    
+    // Add the scene-photos lead after Navarro's intro with a short delay
+    setTimeout(() => {
+      setMsgs(prevMsgs => [
+        ...prevMsgs,
+        { speaker: 'System', content: '🕵️ New lead unlocked: Photograph the crime scene thoroughly.' }
+      ]);
+      
+      // Add the lead to the leads array
+      setLeads(['scene-photos']);
+      
+      // Add Navarro's narrative about the lead with another short delay
+      setTimeout(() => {
+        setMsgs(prevMsgs => [
+          ...prevMsgs,
+          { speaker: 'Navarro', content: 'The layout and positioning of items may reveal important clues about what happened.' }
+        ]);
+        
+        // Add the interview-marvin lead after another short delay
+        setTimeout(() => {
+          setMsgs(prevMsgs => [
+            ...prevMsgs,
+            { speaker: 'System', content: '🕵️ New lead unlocked: Interview Marvin Lott about what he heard that night.' }
+          ]);
+          
+          // Add both leads to the leads array
+          setLeads(['scene-photos', 'interview-marvin']);
+          
+          // Add Navarro's narrative about interviewing Marvin
+          setTimeout(() => {
+            setMsgs(prevMsgs => [
+              ...prevMsgs,
+              { speaker: 'Navarro', content: 'As the reporting witness, his testimony about the timing and what he heard will be crucial.' }
+            ]);
+          }, 1000);
+        }, 1500);
+      }, 1000);
+    }, 1500);
   };
 
   // Process pending notifications after character dialogue
@@ -1586,18 +1745,6 @@ function isGeneralInvestigativeAction(text) {
         
         // Show notepad notification
         showNotepadNotification('evidence', evidenceDef);
-        
-        // Add Navarro's commentary about the evidence
-        const commentary = getEvidenceCommentary(evidenceDef.id);
-        if (commentary) {
-          setMsgs(m => [
-            ...m,
-            {
-              speaker: 'Navarro',
-              content: commentary
-            }
-          ]);
-        }
       }
     });
     
@@ -3016,8 +3163,11 @@ if (conversationState.conversationPhase === 'CONCLUDING') {
 
       {/* Message Log */}
       <div style={{ height:'50vh', overflowY:'auto', border:'1px solid #ccc', padding:8, margin:'8px 0' }}>
-        {msgs.map((m,i) => (
-          <div key={i}><strong>{m.speaker}:</strong> {m.content}</div>
+        {displayedMsgs.map((m,i) => (
+          <div key={m.id || i} style={{ marginBottom: '8px' }}>
+            <strong>{m.speaker}:</strong> {m.displayContent || ''}
+            {m.isTyping && <span style={{ opacity: 0.7, marginLeft: '2px', animation: 'blink 1s infinite' }}>|</span>}
+          </div>
         ))}
         {loading && <div>…thinking…</div>}
         <div ref={scrollRef} />
