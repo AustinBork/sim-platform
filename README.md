@@ -29,14 +29,7 @@ Copy
 4. Run it locally  
 `npm run dev`
 
----
 
-Then save, close, and push it:
-
-```powershell
-git add README.md
-git commit -m "Add README with setup instructions"
-git push
 
 
 
