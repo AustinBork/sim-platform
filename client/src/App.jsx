@@ -682,6 +682,39 @@ const isEndingConversation = useCallback((text, currentState) => {
   }, [timeElapsed, START_OF_DAY]); 
 
   // —— TYPEWRITER EFFECT FUNCTIONS ——
+  // Skip current typewriter animation and complete it instantly
+  const skipTypewriter = useCallback(() => {
+    if (currentlyTyping) {
+      // Clear any pending timeout
+      if (typewriterTimerRef.current) {
+        clearTimeout(typewriterTimerRef.current);
+        typewriterTimerRef.current = null;
+      }
+      
+      // Complete the current message instantly
+      setDisplayedMsgs(prev => {
+        const updated = [...prev];
+        const msgIndex = updated.findIndex(m => m.id === currentlyTyping.id);
+        if (msgIndex !== -1) {
+          updated[msgIndex] = {
+            ...updated[msgIndex],
+            displayContent: currentlyTyping.content,
+            isTyping: false
+          };
+        }
+        return updated;
+      });
+      
+      // Clear current typing state
+      setCurrentlyTyping(null);
+      
+      // Auto-scroll after completion
+      setTimeout(() => {
+        scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 50);
+    }
+  }, [currentlyTyping]);
+
   // Process typewriter queue and start typing next message
   const processTypewriterQueue = useCallback(() => {
     if (currentlyTyping || typewriterQueue.length === 0) return;
@@ -795,6 +828,55 @@ const isEndingConversation = useCallback((text, currentState) => {
       }
     }
   }, [msgs, addMessageWithTypewriter, displayedMsgs.length]);
+
+  // —— KEYBOARD HANDLERS FOR TYPEWRITER SKIP ——
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      // Only handle Enter key when not focused on an input field
+      if (event.key === 'Enter' && event.target.tagName !== 'INPUT' && event.target.tagName !== 'TEXTAREA') {
+        event.preventDefault();
+        skipTypewriter();
+      }
+    };
+
+    // Add global keydown listener
+    document.addEventListener('keydown', handleKeyDown);
+    
+    // Cleanup on unmount
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [skipTypewriter]);
+
+  // —— NAVARRO TRANSITION AFTER CONVERSATION ENDS ——
+  useEffect(() => {
+    if (conversationState.conversationPhase === 'CONCLUDING' && conversationState.pendingAction === 'END_CONVERSATION' && !loading) {
+      console.log('🔚 FINAL conversation end detected, adding Navarro transition');
+      
+      const navarroTransitions = [
+        "Alright, Detective. That gave us some useful information. What's our next move?",
+        "Good work getting that information. Where should we focus our investigation now?",
+        "That was helpful. What do you think we should do next?",
+        "Okay, we've got some new details to work with. What's your next step?",
+        "Nice interview. We're making progress. Where to next?"
+      ];
+      
+      const randomTransition = navarroTransitions[Math.floor(Math.random() * navarroTransitions.length)];
+      
+      setTimeout(() => {
+        console.log('🔚 Adding Navarro transition after conversation end');
+        setMsgs(m => [...m, { speaker: 'Navarro', content: randomTransition }]);
+        
+        // Reset conversation state
+        setConversationStateWithValidation(prev => ({
+          ...prev,
+          currentCharacter: null,
+          pendingAction: null,
+          conversationPhase: 'NONE'
+        }));
+      }, 1500); // Even longer delay to ensure all message processing completes
+    }
+  }, [conversationState.conversationPhase, conversationState.pendingAction, loading]);
 
   // —— DERIVED NOTES STATE ——
   // Function to update detective thoughts based on game state
@@ -2891,47 +2973,7 @@ if (conversationState.conversationPhase === 'CONCLUDING') {
         processPendingNotifications();
       }
       
-      // Reset conversation state if character is exiting the conversation
-      if (conversationState.conversationPhase === 'CONCLUDING') {
-        console.log('🔚 CONCLUDING conversation detected, starting exit sequence');
-        setTimeout(() => {
-          console.log('🔚 Executing exit sequence timeout');
-          // Generate exit narrative if appropriate
-          const exitNarrative = generateTransitionNarrative(
-            conversationState.currentCharacter,
-            null,
-            'END_CONVERSATION',
-            {
-              currentTime: currentClock(),
-              conversationState
-            }
-          );
-          
-          if (exitNarrative) {
-            setMsgs(m => [...m, { speaker: 'System', content: exitNarrative }]);
-          }
-          
-          // Add Navarro's transition dialogue
-          const navarroTransitions = [
-            "Alright, Detective. That gave us some useful information. What's our next move?",
-            "Good work getting that information. Where should we focus our investigation now?",
-            "That was helpful. What do you think we should do next?",
-            "Okay, we've got some new details to work with. What's your next step?",
-            "Nice interview. We're making progress. Where to next?"
-          ];
-          
-          const randomTransition = navarroTransitions[Math.floor(Math.random() * navarroTransitions.length)];
-          setMsgs(m => [...m, { speaker: 'Navarro', content: randomTransition }]);
-          
-          // Reset conversation state
-          setConversationStateWithValidation(prev => ({
-            ...prev,
-            currentCharacter: null,
-            pendingAction: null,
-            conversationPhase: 'NONE'
-          }));
-        }, 1000); // Small delay to let the goodbye message process
-      }
+      // Conversation ending is now handled by useEffect that watches conversationState changes
     }
   } catch (err) {
     setMsgs(m => [...m, { speaker: 'Navarro', content: `❌ ${err.message}` }]);
