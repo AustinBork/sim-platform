@@ -580,8 +580,11 @@ const isEndingConversation = useCallback((text, currentState) => {
   
   // Context-based ending signals
   const contextualEndingPatterns = [
-    // Phrase that implies you've gotten what you need
+    // Phrase that implies you've gotten what you need - make more specific
     { pattern: 'that\'s helpful', context: 'ANY' },
+    { pattern: 'that helps', context: 'ANY' },
+    // Don't match "helps" in "everything helps" - add word boundary check
+    { pattern: 'very helpful', context: 'ANY' },
     // Longer pauses might indicate conversation transitions
     { pattern: '...', context: 'QUESTIONING' },
     // If asking about evidence while talking to someone
@@ -610,8 +613,13 @@ const isEndingConversation = useCallback((text, currentState) => {
                                    (lowerText.includes('what do you think') && 
                                    !lowerText.includes(currentState.currentCharacter.toLowerCase()));
   
-  // Check for contextual ending patterns
+  // Check for contextual ending patterns - simplified to avoid issues
   const hasContextualEnding = contextualEndingPatterns.some(pattern => {
+    // Skip problematic patterns for now
+    if (pattern.pattern === 'that\'s helpful' || pattern.pattern === 'that helps') {
+      return false;
+    }
+    
     return lowerText.includes(pattern.pattern) && 
            (pattern.context === 'ANY' || pattern.context === currentState.conversationPhase) &&
            (!pattern.condition || pattern.condition());
@@ -640,6 +648,7 @@ const isEndingConversation = useCallback((text, currentState) => {
                   hasContextualEnding ||
                   (hasConversationFatigue && hasDiscussedCriticalTopics);
   
+  
   // Detailed logging for debugging
   console.log('🔍 Checking if ending conversation:', {
     isEnding,
@@ -652,8 +661,22 @@ const isEndingConversation = useCallback((text, currentState) => {
     otherCharacterMentioned,
     hasContextualEnding,
     hasConversationFatigue,
-    hasDiscussedCriticalTopics
+    hasDiscussedCriticalTopics,
+    text: text.substring(0, 50) + '...'
   });
+  
+  // Enhanced debugging - show which condition is triggering
+  if (isEnding) {
+    console.log('⚠️ ENDING TRIGGERED BY:', {
+      isGoodbye: isGoodbye,
+      isMovingAway: isMovingAway,
+      isRedirectingConversation: isRedirectingConversation,
+      isTransitioningToInvestigation: isTransitioningToInvestigation,
+      otherCharacterMentioned: otherCharacterMentioned,
+      hasContextualEnding: hasContextualEnding,
+      conversationFatigue: hasConversationFatigue && hasDiscussedCriticalTopics
+    });
+  }
   
   return isEnding;
   }, [timeElapsed, START_OF_DAY]); 
@@ -1434,7 +1457,16 @@ const enhancedConversationEndingDetection = useCallback((text, currentState) => 
   ];
   
   // Check for explicit goodbyes
-  const isGoodbye = goodbyePhrases.some(phrase => lowerText.includes(phrase));
+  const isGoodbye = goodbyePhrases.some(phrase => {
+    if (!lowerText.includes(phrase)) return false;
+    
+    // Don't treat "thanks" as goodbye if it's followed by a question
+    if (phrase === 'thanks' && lowerText.includes('?')) {
+      return false;
+    }
+    
+    return true;
+  });
   
   // Check for movement away from the conversation
   const isMovingAway = currentState.currentCharacter && 
