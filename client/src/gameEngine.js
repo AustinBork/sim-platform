@@ -52,6 +52,30 @@ export const leadDefinitions = [
     triggers: { actionsKeywords: ['security', 'cameras', 'camera footage', 'entry log', 'building security'] }
   },
   {
+    id: 'apartment-search',
+    description: 'Search the apartment thoroughly for additional evidence.',
+    narrative: 'A more detailed search might reveal evidence missed during initial photography.',
+    triggers: { actionsKeywords: ['search', 'look around', 'thorough search', 'search apartment'] }
+  },
+  {
+    id: 'window-investigation',
+    description: 'Investigate the ajar window as a potential exit route.',
+    narrative: 'The killer must have left somehow despite the locked door.',
+    triggers: { evidenceCollected: ['window-ajar'] }
+  },
+  {
+    id: 'forensic-analysis',
+    description: 'Send evidence to forensics lab for detailed analysis.',
+    narrative: 'Professional analysis might reveal fingerprints, DNA, or other trace evidence.',
+    triggers: { evidenceCollected: ['partial-print-knife', 'bracelet-charm'] }
+  },
+  {
+    id: 'records-investigation',
+    description: 'Pull phone records and security footage.',
+    narrative: 'Digital evidence could reveal the timeline and identify suspects.',
+    triggers: { evidenceCollected: ['phone-metadata', 'doorbell-footage'] }
+  },
+  {
     id: 'red-herring-dog-walker',
     description: 'Talk to the dog-walker who was passing by at 3:30 AM.',
     narrative: 'A resident mentioned seeing someone walking a dog outside around the time of the murder.',
@@ -80,7 +104,7 @@ export const evidenceDefinitions = [
   {
     id: "missing-phone",
     description: "Victim's phone is missing from the scene",
-    discoveredBy: ["check phone", "look for phone", "search belongings"]
+    discoveredBy: ["search apartment", "search appartment", "search room", "check phone", "look for phone", "search belongings"]
   },
   {
     id: "locked-door",
@@ -95,7 +119,29 @@ export const evidenceDefinitions = [
   {
     id: "bracelet-charm",
     description: "Small metal charm found under the couch",
-    discoveredBy: ["check couch", "look under furniture", "thorough search"]
+    discoveredBy: ["search apartment", "search appartment", "search room", "check couch", "look under furniture", "thorough search"]
+  },
+
+  // === NEW EVIDENCE FROM CASE FLOW ===
+  {
+    id: "window-ajar",
+    description: "Window is slightly ajar - possible exit route",
+    discoveredBy: ["check window", "examine window", "inspect window", "look at window"]
+  },
+  {
+    id: "partial-print-knife",
+    description: "Partial fingerprint on murder weapon handle",
+    discoveredBy: ["examine knife", "check knife", "inspect knife", "analyze knife"]
+  },
+  {
+    id: "phone-metadata",
+    description: "Victim's phone call logs and metadata",
+    discoveredBy: ["pull phone records", "get phone records", "check phone records", "phone records"]
+  },
+  {
+    id: "doorbell-footage",
+    description: "Building security doorbell camera footage",
+    discoveredBy: ["check doorbell", "doorbell footage", "security footage", "check cameras"]
   }
 ];
 
@@ -162,16 +208,13 @@ export function discoverEvidence(actionText, currentEvidence) {
   const lowerAction = actionText.toLowerCase();
   const newEvidence = [];
   
-  // Enhanced room search detection with natural language and typo handling
-  const isRoomSearch = 
-    // Original exact patterns
+  // Photography patterns (crime scene documentation)
+  const isPhotography = 
     lowerAction.includes("photograph room") || 
     lowerAction.includes("take photos") || 
     lowerAction.includes("photograph scene") || 
     lowerAction.includes("document scene") ||
     lowerAction.includes("take pictures") ||
-    
-    // Enhanced photo patterns with typos
     lowerAction.includes("pcitures") || 
     lowerAction.includes("picures") || 
     lowerAction.includes("picture") || 
@@ -179,14 +222,19 @@ export function discoverEvidence(actionText, currentEvidence) {
     lowerAction.includes("pics") ||
     lowerAction.includes("snap") ||
     lowerAction.includes("capture") ||
-    
-    // Natural language patterns for photography
-    (lowerAction.includes("get") && (lowerAction.includes("picture") || lowerAction.includes("photo") || lowerAction.includes("pic") || lowerAction.includes("pcitures"))) ||
-    (lowerAction.includes("take") && (lowerAction.includes("picture") || lowerAction.includes("photo") || lowerAction.includes("pic") || lowerAction.includes("pcitures"))) ||
-    
-    // Scene documentation patterns
-    (lowerAction.includes("document") && (lowerAction.includes("place") || lowerAction.includes("scene") || lowerAction.includes("room") || lowerAction.includes("apartment"))) ||
-    (lowerAction.includes("record") && (lowerAction.includes("place") || lowerAction.includes("scene") || lowerAction.includes("room") || lowerAction.includes("apartment")));
+    (lowerAction.includes("get") && (lowerAction.includes("picture") || lowerAction.includes("photo") || lowerAction.includes("pic"))) ||
+    (lowerAction.includes("take") && (lowerAction.includes("picture") || lowerAction.includes("photo") || lowerAction.includes("pic"))) ||
+    (lowerAction.includes("document") && (lowerAction.includes("scene") || lowerAction.includes("room")));
+
+  // Apartment search patterns (detailed investigation)
+  const isApartmentSearch = 
+    lowerAction.includes("search apartment") ||
+    lowerAction.includes("search room") ||
+    lowerAction.includes("search the apartment") ||
+    lowerAction.includes("search around") ||
+    lowerAction.includes("look around") ||
+    lowerAction.includes("thorough search") ||
+    (lowerAction.includes("search") && (lowerAction.includes("place") || lowerAction.includes("room") || lowerAction.includes("apartment")));
     
   // Process each evidence definition
   for (const evidence of evidenceDefinitions) {
@@ -198,8 +246,10 @@ export function discoverEvidence(actionText, currentEvidence) {
       lowerAction.includes(trigger)
     );
     
-    // Discover evidence if triggered or if doing comprehensive room search
-    if (isTriggered || (isRoomSearch && evidence.discoveredBy.includes("photograph room"))) {
+    // Discover evidence based on action type and specific triggers
+    if (isTriggered || 
+        (isPhotography && evidence.discoveredBy.includes("photograph room")) ||
+        (isApartmentSearch && evidence.discoveredBy.includes("search apartment"))) {
       newEvidence.push(evidence.id);
     }
   }

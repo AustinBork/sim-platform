@@ -2199,11 +2199,40 @@ function isGeneralInvestigativeAction(text) {
             content: '*You finish documenting the crime scene thoroughly, capturing all visible evidence.*'
           }]);
           
-          // Add Navarro's follow-up question
-          setMsgs(m => [...m, { 
-            speaker: 'Navarro', 
-            content: 'Good work. We\'ve got a solid foundation now. What\'s our next move, Detective?'
-          }]);
+          // Check if photography was just completed to suggest apartment search
+          const photographyEvidence = ['stab-wound', 'no-forced-entry', 'partial-cleaning', 'locked-door', 'bloodstain'];
+          const justCompletedPhotography = gameEngineResult.discoveredEvidence?.some(ev => 
+            photographyEvidence.includes(ev)
+          );
+          
+          // Add context-appropriate Navarro follow-up
+          if (justCompletedPhotography) {
+            // Add apartment search lead after photography completion
+            const apartmentSearchLead = leadDefinitions.find(l => l.id === 'apartment-search');
+            if (apartmentSearchLead && !leads.includes('apartment-search')) {
+              setLeads(prev => [...prev, 'apartment-search']);
+              
+              // Add lead notification
+              setMsgs(m => [...m, { 
+                speaker: 'System', 
+                content: `🕵️ New lead unlocked: ${apartmentSearchLead.description}`
+              }]);
+              setMsgs(m => [...m, { 
+                speaker: 'Navarro', 
+                content: apartmentSearchLead.narrative
+              }]);
+            }
+            
+            setMsgs(m => [...m, { 
+              speaker: 'Navarro', 
+              content: 'Good work. We\'ve got a solid foundation now. The photos show the basics, but we might have missed something. A thorough search of the apartment could turn up evidence the killer left behind.'
+            }]);
+          } else {
+            setMsgs(m => [...m, { 
+              speaker: 'Navarro', 
+              content: 'Good work. We\'ve got a solid foundation now. What\'s our next move, Detective?'
+            }]);
+          }
           
           // Reset conversation state to indicate scene completion
           setConversationStateWithValidation(prev => ({
@@ -2532,11 +2561,7 @@ const sendMessage = async () => {
 if (actionType === 'INVESTIGATIVE') {
   console.log('🔍 Processing investigative action:', input);
   
-  // Add Navarro's affirmation for investigation
-  const affirmation = getNavarroAffirmation(input);
-  setMsgs(m => [...m, { speaker: 'Navarro', content: affirmation }]);
-  
-  // Handle investigative action processing
+  // Handle investigative action processing (includes its own Navarro commentary)
   handleInvestigativeAction(input);
   
   // For investigative actions, end here to prevent duplicate AI processing
