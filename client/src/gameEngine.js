@@ -17,9 +17,9 @@ export const leadDefinitions = [
   },
   {
     id: 'phone-records',
-    description: 'Obtain Marvin\'s phone records from 2 AM to 4 AM.',
-    narrative: 'His call to 911 came at 3:45 AM, but what was he doing before that? His timing seems convenient.',
-    triggers: { actionsKeywords: ['phone record', 'call log', 'phone records'] }
+    description: 'Pull phone records for the victim\'s missing phone.',
+    narrative: 'The victim\'s phone is missing from the scene. Phone records could reveal who she was in contact with before her death.',
+    triggers: { evidenceCollected: ['missing-phone'] }
   },
   {
     id: 'interview-marvin',
@@ -67,14 +67,28 @@ export const leadDefinitions = [
     id: 'forensic-analysis',
     description: 'Send evidence to forensics lab for detailed analysis.',
     narrative: 'Professional analysis might reveal fingerprints, DNA, or other trace evidence.',
-    triggers: { evidenceCollected: ['partial-print-knife', 'bracelet-charm'] }
+    triggers: { evidenceCollected: ['bracelet-charm'] }
   },
   {
     id: 'records-investigation',
     description: 'Pull phone records and security footage.',
     narrative: 'Digital evidence could reveal the timeline and identify suspects.',
-    triggers: { evidenceCollected: ['phone-metadata', 'doorbell-footage'] }
+    triggers: { evidenceCollected: ['phone-company-records', 'doorbell-footage'] }
   },
+  {
+    id: 'interview-rachel',
+    description: 'Interview Rachel Kim, Mia\'s best friend.',
+    narrative: 'Phone records reveal Rachel as a key contact. She may have crucial information about the victim\'s recent activities and relationships.',
+    triggers: { evidenceCollected: ['phone-company-records'] }
+  },
+  {
+    id: 'interview-jordan',
+    description: 'Interview Jordan Valez, the ex-boyfriend.',
+    narrative: 'Phone records show recent contact with an ex-boyfriend. His alibi needs to be verified.',
+    triggers: { evidenceCollected: ['phone-company-records'] }
+  },
+  // Note: Lab analysis is now handled through character conversation with Dr. Sarah Chen
+  // rather than as a separate investigative action lead
   {
     id: 'red-herring-dog-walker',
     description: 'Talk to the dog-walker who was passing by at 3:30 AM.',
@@ -129,13 +143,8 @@ export const evidenceDefinitions = [
     discoveredBy: ["check window", "examine window", "inspect window", "look at window"]
   },
   {
-    id: "partial-print-knife",
-    description: "Partial fingerprint on murder weapon handle",
-    discoveredBy: ["examine knife", "check knife", "inspect knife", "analyze knife"]
-  },
-  {
-    id: "phone-metadata",
-    description: "Victim's phone call logs and metadata",
+    id: "phone-company-records",
+    description: "Phone company records showing call activity",
     discoveredBy: ["pull phone records", "get phone records", "check phone records", "phone records"]
   },
   {

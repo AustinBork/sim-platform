@@ -104,8 +104,8 @@ const characterKnowledge = {
     knowledge: {
       // Her prepared story
       coverStory: [
-        "Claims she found the body at 8:00 AM when coming to pick Mia up for breakfast",
-        "Says she had plans with Mia that morning",
+        "Had breakfast plans with Mia at 7:00 AM at their usual cafe",
+        "Called Mia at 7:25 AM when she didn't show up, figured she slept in",
         "Claims to have been home alone all night",
         "Suggests Jordan (the ex) should be investigated"
       ],
@@ -125,8 +125,8 @@ const characterKnowledge = {
       ],
       // Her lies and inconsistencies
       contradictions: [
-        "Phone records show she called Mia at 7:25 AM (before 'finding' the body)",
-        "Security footage doesn't show her arriving at the time claimed",
+        "Phone company records show suspicious timing of 7:25 AM call",
+        "Building doorbell footage shows her leaving around 3:48 AM",
         "Her bracelet charm matches one found at the crime scene",
         "Has no explanation for timeline discrepancies when pressed"
       ]

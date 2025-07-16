@@ -1,44 +1,315 @@
+/* Detective Game App Styles */
+
+/* Root Container */
 #root {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  padding: 1rem;
+  min-height: 100vh;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+/* Main Game Container */
+.game-container {
+  padding: 16px;
+  max-width: 800px;
+  margin: auto;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
-
+/* Card / Paper Style UI Components */
 .card {
-  padding: 2em;
+  background: var(--paper-light);
+  /* Fallback paper texture effect using CSS patterns */
+  background-image: 
+    radial-gradient(circle at 25% 25%, rgba(205, 133, 63, 0.05) 0%, transparent 50%),
+    radial-gradient(circle at 75% 75%, rgba(160, 102, 32, 0.03) 0%, transparent 50%),
+    linear-gradient(45deg, transparent 49%, rgba(205, 133, 63, 0.02) 50%, transparent 51%);
+  background-size: 100px 100px, 150px 150px, 200px 200px;
+  
+  border: 1px solid var(--border-dark);
+  box-shadow: 
+    2px 4px 8px var(--shadow-dark),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  padding: 1.5rem;
+  margin: 1rem;
+  border-radius: 4px;
+  color: var(--ink-readable);
+  font-family: 'Courier Prime', monospace;
+  position: relative;
 }
 
-.read-the-docs {
-  color: #888;
+.card-header {
+  border-bottom: 2px solid var(--border-dark);
+  padding-bottom: 8px;
+  margin-bottom: 16px;
+  color: var(--ink-readable);
+  font-family: 'Special Elite', monospace;
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+
+/* Intro Card Styling */
+.intro-card {
+  background: var(--paper-light);
+  background-image: 
+    radial-gradient(circle at 25% 25%, rgba(205, 133, 63, 0.05) 0%, transparent 50%),
+    radial-gradient(circle at 75% 75%, rgba(160, 102, 32, 0.03) 0%, transparent 50%);
+  background-size: 150px 150px, 200px 200px;
+  
+  border: 1px solid var(--border-dark);
+  box-shadow: 4px 8px 16px var(--shadow-dark);
+  padding: 2rem;
+  margin: 2rem auto;
+  max-width: 650px;
+  border-radius: 8px;
+  color: var(--ink-readable);
+  font-family: 'Courier Prime', monospace;
+}
+
+/* Intro Card Headings */
+.intro-card h1 {
+  color: var(--red-thread);
+  font-family: 'Special Elite', monospace;
+  text-shadow: 2px 2px 4px var(--shadow-dark);
+  margin-bottom: 24px;
+}
+
+.intro-card h3 {
+  color: var(--ink-readable);
+  font-family: 'Special Elite', monospace;
+  border-bottom: 1px solid var(--border-dark);
+  padding-bottom: 8px;
+  margin-bottom: 16px;
+}
+
+/* Intro Card Text */
+.intro-card p {
+  color: var(--ink-readable);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+
+/* Game Features List */
+.intro-card ul {
+  padding-left: 24px;
+  margin-bottom: 24px;
+}
+
+.intro-card li {
+  color: var(--ink-readable);
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+
+.intro-card li strong {
+  color: var(--ink-readable);
+  font-weight: bold;
+}
+
+/* Dialogue Box (Navarro style) */
+.dialogue-box {
+  background: var(--paper-aged);
+  background-image: 
+    radial-gradient(circle at 30% 30%, rgba(139, 90, 43, 0.08) 0%, transparent 40%),
+    radial-gradient(circle at 70% 70%, rgba(101, 67, 33, 0.05) 0%, transparent 40%);
+  background-size: 120px 120px, 180px 180px;
+  
+  padding: 1rem 1.5rem;
+  border: 1px solid var(--border-medium);
+  color: var(--ink-readable);
+  font-size: 1rem;
+  margin: 1rem 0;
+  border-radius: 4px;
+  box-shadow: 
+    inset 0 0 8px rgba(0, 0, 0, 0.2),
+    2px 2px 4px var(--shadow-medium);
+  font-family: 'Courier Prime', monospace;
+  line-height: 1.6;
+  position: relative;
+}
+
+.dialogue-box::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, transparent 49%, rgba(139, 90, 43, 0.03) 50%, transparent 51%);
+  pointer-events: none;
+}
+
+/* Message Log Container */
+.message-log {
+  height: 50vh;
+  overflow-y: auto;
+  border: 2px solid var(--border-dark);
+  background: var(--paper-light);
+  background-image: 
+    linear-gradient(90deg, rgba(205, 133, 63, 0.03) 0%, transparent 1%),
+    linear-gradient(0deg, rgba(205, 133, 63, 0.02) 0%, transparent 1%);
+  background-size: 30px 30px;
+  padding: 12px;
+  margin: 8px 0;
+  border-radius: 4px;
+  box-shadow: inset 2px 2px 4px var(--shadow-medium);
+}
+
+.message-log::-webkit-scrollbar {
+  width: 8px;
+}
+
+.message-log::-webkit-scrollbar-track {
+  background: var(--paper-aged);
+}
+
+.message-log::-webkit-scrollbar-thumb {
+  background: var(--border-dark);
+  border-radius: 4px;
+}
+
+.message-log::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-dark);
+}
+
+/* Individual Message Styling */
+.message {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-family: 'Courier Prime', monospace;
+  line-height: 1.5;
+  background: rgba(255, 255, 255, 0.2);
+  border-left: 3px solid var(--border-medium);
+  color: var(--ink-readable);
+}
+
+.message strong {
+  color: var(--ink-readable);
+  font-weight: bold;
+  font-size: 1.05em;
+}
+
+/* Character-specific message styling for better readability */
+.message:has(strong:contains("Navarro")) {
+  background: rgba(204, 41, 54, 0.08);
+  border-left-color: var(--red-thread);
+}
+
+.message:has(strong:contains("Detective")) {
+  background: rgba(217, 180, 135, 0.1);
+  border-left-color: var(--timer-text);
+}
+
+.message:has(strong:contains("System")) {
+  background: rgba(139, 90, 43, 0.1);
+  border-left-color: var(--border-dark);
+  font-style: italic;
+}
+
+/* Notepad Entries */
+.notepad {
+  background: var(--paper-light);
+  background-image: 
+    linear-gradient(90deg, rgba(205, 133, 63, 0.1) 0%, transparent 1%),
+    linear-gradient(0deg, rgba(205, 133, 63, 0.05) 0%, transparent 1%);
+  background-size: 25px 25px;
+  
+  font-family: 'Courier Prime', monospace;
+  padding: 1.5rem;
+  border: 1px dashed var(--border-medium);
+  margin-top: 1rem;
+  color: var(--ink-medium);
+  box-shadow: 
+    2px 2px 4px var(--shadow-medium),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  position: relative;
+}
+
+.notepad::before {
+  content: '';
+  position: absolute;
+  left: 2rem;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--red-thread);
+  opacity: 0.3;
+}
+
+/* Notepad Modal */
+.notepad-modal {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90%;
+  max-width: 800px;
+  background: var(--paper-light);
+  background-image: 
+    linear-gradient(90deg, rgba(205, 133, 63, 0.08) 0%, transparent 1%),
+    linear-gradient(0deg, rgba(205, 133, 63, 0.04) 0%, transparent 1%);
+  background-size: 20px 20px;
+  
+  border: 2px solid var(--border-dark);
+  border-radius: 8px;
+  padding: 2rem;
+  z-index: 1000;
+  color: var(--ink-readable);
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 
+    0 8px 32px var(--shadow-dark),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  font-family: 'Courier Prime', monospace;
+}
+
+/* Timer Display */
+.timer {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: var(--timer-text);
+  background: var(--timer-bg);
+  background-image: 
+    radial-gradient(circle at 50% 50%, rgba(217, 180, 135, 0.1) 0%, transparent 50%);
+  padding: 12px 20px;
+  display: inline-block;
+  border: 2px solid var(--border-dark);
+  box-shadow: 
+    0 4px 8px var(--shadow-dark),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  font-family: 'Special Elite', monospace;
+  letter-spacing: 2px;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+/* Red Thread / Connector Lines */
+.connector {
+  width: 2px;
+  background: var(--red-thread);
+  background-image: linear-gradient(45deg, 
+    transparent 25%, 
+    rgba(255, 255, 255, 0.1) 26%, 
+    rgba(255, 255, 255, 0.1) 50%, 
+    transparent 51%);
+  background-size: 4px 4px;
+  position: absolute;
+  z-index: 10;
+  box-shadow: 0 0 2px rgba(204, 41, 54, 0.3);
+}
+
+/* Loading State */
+.loading {
+  color: var(--ink-medium);
+  font-style: italic;
+  opacity: 0.7;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
 }
 
 /* Typewriter cursor animation */
@@ -49,4 +320,113 @@
   51%, 100% {
     opacity: 0;
   }
+}
+
+.typewriter-cursor {
+  opacity: 0.7;
+  margin-left: 2px;
+  animation: blink 1s infinite;
+  color: var(--ink-dark);
+}
+
+/* Notification Styling */
+.notification {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: var(--paper-aged);
+  background-image: 
+    radial-gradient(circle at 30% 30%, rgba(139, 90, 43, 0.08) 0%, transparent 40%);
+  background-size: 100px 100px;
+  
+  color: var(--ink-readable);
+  padding: 16px;
+  border-radius: 8px;
+  max-width: 300px;
+  z-index: 1000;
+  box-shadow: 
+    0 4px 16px var(--shadow-dark),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-dark);
+  font-family: 'Courier Prime', monospace;
+}
+
+/* Time Skip Controls */
+.time-controls {
+  display: flex;
+  gap: 8px;
+  margin-left: 8px;
+}
+
+.time-skip-item {
+  position: relative;
+}
+
+.time-skip-btn {
+  background: var(--paper-aged);
+  border: 1px solid var(--border-dark);
+  border-radius: 4px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 1.2rem;
+  transition: all 0.2s ease;
+  box-shadow: 
+    1px 2px 4px var(--shadow-dark),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.time-skip-btn:hover {
+  background: var(--paper-light);
+  transform: translateY(-1px);
+  box-shadow: 
+    2px 4px 8px var(--shadow-dark),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+.time-skip-btn:active {
+  transform: translateY(0);
+  box-shadow: 
+    1px 1px 2px var(--shadow-dark),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.time-skip-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--paper-aged);
+  border: 1px solid var(--border-dark);
+  border-radius: 4px;
+  box-shadow: 
+    0 4px 12px var(--shadow-dark),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  padding: 8px;
+  margin-bottom: 8px;
+  min-width: 200px;
+  z-index: 1000;
+}
+
+.time-skip-option {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-family: 'Courier Prime', monospace;
+  color: var(--ink-readable);
+  text-align: left;
+  border-radius: 2px;
+  transition: background-color 0.2s ease;
+  font-size: 0.9rem;
+}
+
+.time-skip-option:hover {
+  background: var(--paper-light);
+  color: var(--ink-dark);
+}
+
+.time-skip-option:active {
+  background: var(--border-dark);
 }

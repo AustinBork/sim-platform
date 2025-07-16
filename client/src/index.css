@@ -1,68 +1,136 @@
+/* Import Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Special+Elite&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Courier+Prime&display=swap');
+
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  /* Detective Theme Color Palette */
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2b2b2b;
+  --paper-light: #f9f1d8;
+  --paper-aged: #e7dac3;
+  --ink-dark: #1a0f08;
+  --ink-medium: #2a1e10;
+  --ink-readable: #0d0806;
+  --border-dark: #2e1f0f;
+  --border-medium: #332010;
+  --red-thread: #cc2936;
+  --button-dark: #1e1207;
+  --button-hover: #372014;
+  --timer-bg: #2c1f0e;
+  --timer-text: #d9b487;
+  --shadow-dark: rgba(0, 0, 0, 0.6);
+  --shadow-medium: rgba(0, 0, 0, 0.4);
+
+  font-family: 'Special Elite', monospace;
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
+  color: var(--paper-aged);
+  
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
   min-height: 100vh;
+  background: var(--bg-primary);
+  /* Fallback grunge texture effect using CSS patterns */
+  background-image: 
+    radial-gradient(circle at 20% 50%, rgba(120, 119, 108, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(120, 119, 108, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 40% 80%, rgba(120, 119, 108, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 60% 40%, rgba(120, 119, 108, 0.05) 0%, transparent 50%);
+  background-size: 300px 300px, 400px 400px, 500px 500px, 200px 200px;
+  background-position: 0 0, 100px 100px, 200px 200px, 300px 300px;
+  background-attachment: fixed;
 }
 
+/* Typography */
 h1 {
   font-size: 3.2em;
   line-height: 1.1;
+  color: var(--paper-aged);
+  font-family: 'Special Elite', monospace;
+  text-shadow: 2px 2px 4px var(--shadow-dark);
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
+h2, h3, h4 {
+  font-family: 'Special Elite', monospace;
+  color: var(--ink-readable);
+  text-shadow: 1px 1px 2px var(--shadow-medium);
+}
+
+/* Links */
+a {
   font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
+  color: var(--red-thread);
+  text-decoration: none;
+  transition: color 0.2s ease-in-out;
+}
+a:hover {
+  color: #ff4c5c;
+  text-shadow: 0 0 2px var(--red-thread);
+}
+
+/* Base Button Styles */
+button {
+  background-color: var(--button-dark);
+  color: var(--paper-light);
+  padding: 10px 20px;
+  text-transform: uppercase;
+  border: 1px solid var(--border-dark);
+  font-weight: bold;
+  letter-spacing: 1px;
+  font-family: 'Special Elite', monospace;
   cursor: pointer;
-  transition: border-color 0.25s;
+  transition: all 0.2s ease-in-out;
+  box-shadow: 2px 2px 4px var(--shadow-dark);
+  position: relative;
+  overflow: hidden;
 }
+
 button:hover {
-  border-color: #646cff;
+  background-color: var(--button-hover);
+  transform: translateY(-1px);
+  box-shadow: 3px 3px 6px var(--shadow-dark);
 }
+
+button:active {
+  transform: translateY(0);
+  box-shadow: 1px 1px 2px var(--shadow-dark);
+}
+
 button:focus,
 button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  outline: 2px solid var(--red-thread);
+  outline-offset: 2px;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+/* Input Styling */
+input, textarea {
+  background-color: var(--paper-light);
+  color: var(--ink-readable);
+  border: 1px solid var(--border-medium);
+  padding: 8px 12px;
+  font-family: 'Courier Prime', monospace;
+  font-size: 1rem;
+  box-shadow: inset 1px 1px 3px var(--shadow-medium);
+}
+
+input:focus, textarea:focus {
+  outline: 2px solid var(--red-thread);
+  outline-offset: 1px;
+  background-color: #fdf9f0;
+}
+
+/* Selection styling */
+::selection {
+  background-color: var(--red-thread);
+  color: var(--paper-light);
 }

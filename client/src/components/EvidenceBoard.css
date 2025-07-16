@@ -1,0 +1,329 @@
+/* Evidence Board Styles */
+
+.evidence-board-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  z-index: 2000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.evidence-board-container {
+  width: 95vw;
+  height: 95vh;
+  background: var(--paper-aged);
+  border: 3px solid var(--border-dark);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.evidence-board-header {
+  background: var(--paper-light);
+  padding: 1rem;
+  border-bottom: 2px solid var(--border-dark);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: 'Special Elite', monospace;
+  gap: 1rem;
+}
+
+.evidence-board-header h2 {
+  margin: 0;
+  color: var(--ink-readable);
+  font-size: 1.5rem;
+  text-shadow: 1px 1px 2px var(--shadow-medium);
+  flex-shrink: 0;
+}
+
+.board-stats {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.9rem;
+  color: var(--ink-medium);
+  flex: 1;
+  justify-content: center;
+}
+
+.board-stats span {
+  background: rgba(0, 0, 0, 0.1);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.board-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.board-controls button {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  font-family: 'Special Elite', monospace;
+}
+
+.evidence-board {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+  cursor: grab;
+  transform-origin: center center;
+  transition: transform 0.1s ease-out;
+}
+
+.evidence-board:active {
+  cursor: grabbing;
+}
+
+/* Cork Board Background */
+.cork-board-background {
+  position: absolute;
+  top: -100%;
+  left: -100%;
+  width: 400%;
+  height: 400%;
+  background: 
+    /* Cork texture using CSS gradients */
+    radial-gradient(circle at 25% 25%, rgba(160, 102, 32, 0.3) 2px, transparent 2px),
+    radial-gradient(circle at 75% 75%, rgba(139, 90, 43, 0.2) 1px, transparent 1px),
+    radial-gradient(circle at 50% 10%, rgba(101, 67, 33, 0.1) 1px, transparent 1px),
+    radial-gradient(circle at 20% 80%, rgba(160, 102, 32, 0.2) 1px, transparent 1px),
+    radial-gradient(circle at 80% 30%, rgba(139, 90, 43, 0.1) 1px, transparent 1px),
+    linear-gradient(45deg, rgba(160, 102, 32, 0.05) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(139, 90, 43, 0.05) 25%, transparent 25%),
+    var(--paper-aged);
+  background-size: 
+    20px 20px,
+    15px 15px,
+    10px 10px,
+    25px 25px,
+    12px 12px,
+    30px 30px,
+    30px 30px,
+    100% 100%;
+  background-position:
+    0 0,
+    5px 5px,
+    8px 8px,
+    12px 12px,
+    18px 18px,
+    0 0,
+    15px 15px,
+    0 0;
+}
+
+/* Connection Layer */
+.connection-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.connection-line {
+  cursor: pointer;
+  pointer-events: all;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  transition: stroke-width 0.2s ease;
+}
+
+.connection-line:hover {
+  stroke-width: 5;
+  stroke: #ff4c5c;
+}
+
+/* Evidence Cards */
+.evidence-card {
+  position: absolute;
+  width: 200px;
+  height: 150px;
+  background: var(--paper-light);
+  border: 2px solid var(--border-dark);
+  border-radius: 6px;
+  box-shadow: 
+    3px 3px 8px rgba(0, 0, 0, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  cursor: move;
+  font-family: 'Courier Prime', monospace;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  user-select: none;
+  
+  /* Paper texture */
+  background-image: 
+    radial-gradient(circle at 25% 25%, rgba(205, 133, 63, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 75% 75%, rgba(160, 102, 32, 0.05) 0%, transparent 50%),
+    linear-gradient(45deg, transparent 49%, rgba(205, 133, 63, 0.03) 50%, transparent 51%);
+  background-size: 50px 50px, 75px 75px, 100px 100px;
+}
+
+.evidence-card:hover {
+  transform: scale(1.02);
+  box-shadow: 
+    4px 4px 12px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+.evidence-card.dragging {
+  transform: scale(1.05) rotate(2deg);
+  box-shadow: 
+    6px 6px 16px rgba(0, 0, 0, 0.6),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  z-index: 1000 !important;
+}
+
+/* Card Types */
+.evidence-card.evidence {
+  border-left: 4px solid #4caf50;
+}
+
+.evidence-card.lead {
+  border-left: 4px solid #ff9800;
+}
+
+.evidence-card.suspect {
+  border-left: 4px solid var(--red-thread);
+}
+
+/* Card Header */
+.card-header {
+  background: rgba(0, 0, 0, 0.1);
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border-medium);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card-type {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  font-weight: bold;
+  color: var(--ink-medium);
+  background: rgba(0, 0, 0, 0.1);
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+}
+
+.card-title {
+  font-size: 0.9rem;
+  font-weight: bold;
+  color: var(--ink-readable);
+  text-align: center;
+  flex: 1;
+  margin: 0 0.5rem;
+}
+
+/* Card Content */
+.card-content {
+  padding: 0.75rem;
+  color: var(--ink-readable);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  height: calc(100% - 60px);
+  overflow-y: auto;
+}
+
+/* Card Connector (visual indicator for connections) */
+.card-connector {
+  position: absolute;
+  top: 50%;
+  right: -8px;
+  width: 16px;
+  height: 16px;
+  background: var(--red-thread);
+  border-radius: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.evidence-card:hover .card-connector {
+  opacity: 0.7;
+}
+
+/* Instructions */
+.evidence-board-instructions {
+  background: var(--paper-light);
+  padding: 1rem;
+  border-top: 1px solid var(--border-medium);
+  font-family: 'Courier Prime', monospace;
+  color: var(--ink-readable);
+  font-size: 0.9rem;
+}
+
+.evidence-board-instructions p {
+  margin: 0.25rem 0;
+}
+
+.evidence-board-instructions strong {
+  color: var(--ink-readable);
+  font-weight: bold;
+}
+
+/* Scrollbar for card content */
+.card-content::-webkit-scrollbar {
+  width: 4px;
+}
+
+.card-content::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.card-content::-webkit-scrollbar-thumb {
+  background: var(--border-dark);
+  border-radius: 2px;
+}
+
+.card-content::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-dark);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .evidence-board-container {
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+  }
+  
+  .evidence-card {
+    width: 160px;
+    height: 120px;
+  }
+  
+  .card-title {
+    font-size: 0.8rem;
+  }
+  
+  .card-content {
+    font-size: 0.75rem;
+    padding: 0.5rem;
+  }
+}
+
+/* Animation for new connections */
+@keyframes drawLine {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.connection-line {
+  animation: drawLine 0.5s ease-out;
+}

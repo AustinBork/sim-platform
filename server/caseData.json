@@ -91,10 +91,11 @@
     },
     "rachelKim": {
       "role": "Best Friend",
-      "alibi": "Claimed she found the body at 8:00 AM; metadata shows she called Mia at 7:25 AM",
+      "alibi": "Had breakfast plans with Mia at 7:00 AM; called at 7:25 AM when Mia didn't show up",
       "notes": [
         "Obsession motive",
-        "Timeline inconsistencies"
+        "Timeline inconsistencies",
+        "Phone company records show suspicious call timing"
       ]
     }
   },
@@ -114,13 +115,12 @@
     "mistakes": [
       "Left metal charm under couch",
       "Forgot to relock exit window",
-      "Timeline contradicted by phone metadata and doorbell footage"
+      "Timeline contradicted by phone company records and doorbell footage"
     ],
     "evidence": [
       "Bracelet charm under couch",
-      "Partial fingerprint smudge on knife",
       "Doorbell footage at 3:48 AM",
-      "Phone call log at 7:25 AM"
+      "Phone company records showing 7:25 AM call"
     ],
     "arrest": "Rachel Kim arrested for second-degree murder"
   },
