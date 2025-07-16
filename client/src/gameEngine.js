@@ -79,13 +79,13 @@ export const leadDefinitions = [
     id: 'interview-rachel',
     description: 'Interview Rachel Kim, Mia\'s best friend.',
     narrative: 'Phone records reveal Rachel as a key contact. She may have crucial information about the victim\'s recent activities and relationships.',
-    triggers: { evidenceCollected: ['phone-company-records'] }
+    triggers: { analysisCompleted: ['phone-company-records'] }
   },
   {
     id: 'interview-jordan',
     description: 'Interview Jordan Valez, the ex-boyfriend.',
     narrative: 'Phone records show recent contact with an ex-boyfriend. His alibi needs to be verified.',
-    triggers: { evidenceCollected: ['phone-company-records'] }
+    triggers: { analysisCompleted: ['phone-company-records'] }
   },
   // Note: Lab analysis is now handled through character conversation with Dr. Sarah Chen
   // rather than as a separate investigative action lead
@@ -270,7 +270,7 @@ export function discoverEvidence(actionText, currentEvidence) {
 /**
  * Return leadDefinitions whose triggers are satisfied by current state.
  */
-export function getNewLeads({ evidence = [], actionsPerformed = [], interviewsCompleted = [], activeLeads = [] }) {
+export function getNewLeads({ evidence = [], actionsPerformed = [], interviewsCompleted = [], activeLeads = [], analysisCompleted = [] }) {
   const newlyUnlocked = [];
   for (const def of leadDefinitions) {
     if (activeLeads.includes(def.id)) continue;
@@ -280,6 +280,12 @@ export function getNewLeads({ evidence = [], actionsPerformed = [], interviewsCo
     if (triggers.evidenceCollected) {
       for (const e of triggers.evidenceCollected) {
         if (!evidence.includes(e)) { unlocked = false; break; }
+      }
+    }
+    // analysis completion triggers
+    if (unlocked && triggers.analysisCompleted) {
+      for (const e of triggers.analysisCompleted) {
+        if (!analysisCompleted.includes(e)) { unlocked = false; break; }
       }
     }
     // action keyword triggers

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { leadDefinitions, applyAction, canAccuse, fmt, evidenceDefinitions } from './gameEngine';
+import { leadDefinitions, applyAction, canAccuse, fmt, evidenceDefinitions, getNewLeads } from './gameEngine';
 import caseData from '../../server/caseData.json';
 import typewriterSounds from './utils/typewriterSounds';
 import EvidenceBoard from './components/EvidenceBoard';
@@ -25,7 +25,8 @@ const ANALYSIS_COSTS = {
   'no-forced-entry': 120,   // 2 hours for entry analysis
   'window-ajar': 60,        // 1 hour for window examination
   'missing-phone': 180,     // 3 hours for phone data recovery
-  'partial-cleaning': 300   // 5 hours for cleaning pattern analysis
+  'partial-cleaning': 300,  // 5 hours for cleaning pattern analysis
+  'phone-company-records': 180  // 3 hours for phone records analysis
 };
 
 const INTENT_VERBS = ['knock', 'walk', 'go to', 'head to', 'approach', 'talk to', 'visit', 'ask'];
@@ -1020,6 +1021,14 @@ const isEndingConversation = useCallback((text, currentState) => {
       defaultThoughts.push("The victim's phone is missing. I should contact Dr. Chen to pull phone records.");
     }
     
+    if (leads.includes('interview-rachel') && !interviewsCompleted.includes('Rachel Kim')) {
+      defaultThoughts.push("I should have Rachel Kim come in for questioning.");
+    }
+    
+    if (leads.includes('interview-jordan') && !interviewsCompleted.includes('Jordan Valez')) {
+      defaultThoughts.push("I should have Jordan Valez come in for questioning.");
+    }
+    
     if (leads.length > 3 && timeElapsed > 60) {
       defaultThoughts.push("I should review what I know so far and look for connections.");
     }
@@ -1336,7 +1345,7 @@ function getAnalysisResults(completedAnalysis) {
         case 'phone-company-records':
           results.push({
             evidence: evidenceId,
-            result: 'Phone company records show Rachel called Mia at 7:25 AM - suspicious timing for someone with breakfast plans.',
+            result: 'Phone company records show Rachel Kim called Mia at 7:25 AM - suspicious timing for someone with breakfast plans. Records also show recent text exchanges between Mia and Jordan Valez over the past week, indicating renewed contact.',
             newEvidence: ['phone-timeline-inconsistency']
           });
           break;
@@ -2837,6 +2846,12 @@ function isGeneralInvestigativeAction(text) {
   
   // Classify action type for proper routing
   const classifyAction = (input, mentionedCharacter) => {
+    // Service characters should never be investigative
+    if (conversationState.currentCharacter === 'Dr. Sarah Chen' || 
+        conversationState.currentCharacter === 'Navarro') {
+      return 'CHARACTER_INTERACTION';
+    }
+    
     const isInvestigativeAction = isGeneralInvestigativeAction(input);
     
     if (isInvestigativeAction) return 'INVESTIGATIVE';
@@ -3217,8 +3232,127 @@ if (actionType === 'INVESTIGATIVE') {
           }
         }
 
-        // Handle evidence submission to Dr. Sarah Chen
+        // Handle evidence creation and submission to Dr. Sarah Chen
         if (speaker === 'Dr. Sarah Chen' && conversationState.currentCharacter === 'Dr. Sarah Chen') {
+          // Check for phone records request and create evidence
+          const inputLower = input.toLowerCase();
+          const phoneRecordsKeywords = ['phone records', 'phone company', 'phonecompany', 'phone data', 'call records', 'call data', 'phone logs', 'data from the phone'];
+          const phoneRecordsRegex = [
+            /phone\s*company/i,
+            /phone\s*records/i, 
+            /phone\s*data/i,
+            /call\s*records/i,
+            /call\s*data/i,
+            /data.*phone/i,
+            /get.*phone.*data/i,
+            /contact.*phone.*company/i
+          ];
+          
+          const isPhoneRecordsRequest = phoneRecordsKeywords.some(keyword => inputLower.includes(keyword)) ||
+                                       phoneRecordsRegex.some(regex => regex.test(inputLower));
+          
+          if (isPhoneRecordsRequest && !evidence.includes('phone-company-records')) {
+            console.log('📞 Creating phone-company-records evidence from Dr. Chen request');
+            // Add phone records evidence
+            const newEvidence = [...evidence, 'phone-company-records'];
+            setEvidence(newEvidence);
+            
+            // Note: Leads for phone records will be generated when analysis is completed
+            // This prevents immediate access to interview leads before forensics is done
+            
+            // Immediately submit it for analysis
+            const analysisTime = ANALYSIS_COSTS['phone-company-records'] || 180;
+            const currentTime = START_OF_DAY + timeElapsed;
+            const completionTime = currentTime + analysisTime;
+            
+            const analysisRecord = {
+              id: Date.now() + Math.random(),
+              evidence: ['phone-company-records'],
+              submissionTime: currentTime,
+              completionTime: completionTime,
+              analysisTime: analysisTime,
+              status: 'pending'
+            };
+            
+            setPendingAnalysis(prev => [...prev, analysisRecord]);
+            
+            // Add system message about submission
+            setMsgs(m => [...m, { 
+              speaker: 'System', 
+              content: `📋 Evidence submitted to forensics: phone-company-records. Expected completion: ${fmt(completionTime)}.` 
+            }]);
+            
+            console.log(`🔬 Phone records analysis scheduled:`, analysisRecord);
+          }
+          
+          // Check if this is a callback for analysis results
+          const isCallback = isAnalysisResultsCallback(conversationState, completedAnalysis);
+          const resultsKeywords = ['results', 'update', 'ready', 'data', 'analysis', 'findings', 'what did you find', 'phone data'];
+          const isAskingForResults = resultsKeywords.some(keyword => input.toLowerCase().includes(keyword));
+          
+          if (isCallback && isAskingForResults && completedAnalysis.length > 0) {
+            console.log('📋 Delivering analysis results to user');
+            const analysisResults = getAnalysisResults(completedAnalysis);
+            
+            // Process each analysis result
+            analysisResults.forEach(result => {
+              // Add system message with the analysis result
+              setMsgs(m => [...m, { 
+                speaker: 'System', 
+                content: `🔬 Analysis Result: ${result.result}` 
+              }]);
+              
+              // Add any new evidence discovered
+              if (result.newEvidence && result.newEvidence.length > 0) {
+                setEvidence(prev => [...prev, ...result.newEvidence.filter(ev => !prev.includes(ev))]);
+                
+                result.newEvidence.forEach(newEv => {
+                  setMsgs(m => [...m, { 
+                    speaker: 'System', 
+                    content: `🔍 New evidence discovered: ${newEv}` 
+                  }]);
+                });
+              }
+            });
+            
+            // Generate leads that were waiting for this analysis to complete
+            const completedEvidenceIds = completedAnalysis.flatMap(analysis => analysis.evidence);
+            console.log('🔍 Checking for leads triggered by completed analysis:', completedEvidenceIds);
+            
+            const newLeads = getNewLeads({
+              evidence: evidence,
+              actionsPerformed: actionsPerformed,
+              interviewsCompleted: interviewsCompleted,
+              activeLeads: leads,
+              analysisCompleted: completedEvidenceIds
+            });
+            
+            if (newLeads.length > 0) {
+              console.log('🎯 New leads triggered by completed analysis:', newLeads.map(l => l.id));
+              setLeads(prev => [...prev, ...newLeads.map(lead => lead.id)]);
+              
+              // Add system notifications for new leads
+              newLeads.forEach(leadDef => {
+                setMsgs(m => [...m, { 
+                  speaker: 'System', 
+                  content: `🕵️ New lead unlocked: ${leadDef.description}`
+                }]);
+                
+                // Add Navarro's narrative if present
+                if (leadDef.narrative) {
+                  setMsgs(m => [...m, {
+                    speaker: 'Navarro',
+                    content: leadDef.narrative
+                  }]);
+                }
+              });
+            }
+            
+            // Clear completed analysis after delivering results
+            setCompletedAnalysis([]);
+            console.log('📋 Analysis results delivered and cleared');
+          }
+          
           const submittedEvidence = detectEvidenceSubmission(input, evidence);
           
           if (submittedEvidence.length > 0) {
