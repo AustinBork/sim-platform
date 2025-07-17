@@ -1200,6 +1200,14 @@ const isEndingConversation = useCallback((text, currentState) => {
         // Add notifications
         setAnalysisNotifications(prev => [...prev, ...newNotifications]);
         
+        // Add system message to feed about analysis completion
+        newCompletedAnalysis.forEach(analysis => {
+          setMsgs(m => [...m, { 
+            speaker: 'System', 
+            content: `🔬 Dr. Chen's analysis on ${analysis.evidence.join(', ')} is complete. Contact her for results.`
+          }]);
+        });
+        
         console.log('🔬 Analysis completed:', newCompletedAnalysis);
       }
     };
@@ -2903,6 +2911,7 @@ const sendMessage = async () => {
   if (!input.trim()) return;
   
   const actionText = input; // Define actionText at the start
+  setInput(''); // Clear input immediately to prevent race conditions
   
   setMsgs(m => [...m, { speaker: detectiveName, content: actionText }]);
   setLoading(true);
@@ -3121,7 +3130,6 @@ if (actionType === 'INVESTIGATIVE') {
   
   // For investigative actions, end here to prevent duplicate AI processing
   setLoading(false);
-  setInput('');
   return;
 }
 
@@ -3233,6 +3241,76 @@ if (actionType === 'INVESTIGATIVE') {
       }
     : null;
 
+    // Handle analysis results BEFORE AI response if talking to Dr. Chen
+    if ((mentionedCharacter || currentCharacter) === 'Dr. Sarah Chen') {
+      const isCallback = isAnalysisResultsCallback(conversationState, completedAnalysis);
+      const resultsKeywords = ['results', 'update', 'ready', 'data', 'analysis', 'findings', 'what did you find', 'phone data'];
+      const isAskingForResults = resultsKeywords.some(keyword => actionText.toLowerCase().includes(keyword));
+      
+      if (isCallback && isAskingForResults && completedAnalysis.length > 0) {
+        console.log('📋 Delivering analysis results to user BEFORE AI response');
+        const analysisResults = getAnalysisResults(completedAnalysis);
+        
+        // Process each analysis result
+        analysisResults.forEach(result => {
+          // Add system message with the analysis result
+          setMsgs(m => [...m, { 
+            speaker: 'System', 
+            content: `🔬 Analysis Result: ${result.result}` 
+          }]);
+          
+          // Add any new evidence discovered
+          if (result.newEvidence && result.newEvidence.length > 0) {
+            setEvidence(prev => [...prev, ...result.newEvidence.filter(ev => !prev.includes(ev))]);
+            
+            result.newEvidence.forEach(newEv => {
+              setMsgs(m => [...m, { 
+                speaker: 'System', 
+                content: `🔍 New evidence discovered: ${newEv}` 
+              }]);
+            });
+          }
+        });
+        
+        // Generate leads that were waiting for this analysis to complete
+        const completedEvidenceIds = completedAnalysis.flatMap(analysis => analysis.evidence);
+        console.log('🔍 Checking for leads triggered by completed analysis:', completedEvidenceIds);
+        
+        const newLeads = getNewLeads({
+          evidence: evidence,
+          actionsPerformed: actionsPerformed,
+          interviewsCompleted: interviewsCompleted,
+          activeLeads: leads,
+          analysisCompleted: completedEvidenceIds
+        });
+        
+        if (newLeads.length > 0) {
+          console.log('🎯 New leads triggered by completed analysis:', newLeads.map(l => l.id));
+          setLeads(prev => [...prev, ...newLeads.map(lead => lead.id)]);
+          
+          // Add system notifications for new leads
+          newLeads.forEach(leadDef => {
+            setMsgs(m => [...m, { 
+              speaker: 'System', 
+              content: `🕵️ New lead unlocked: ${leadDef.description}`
+            }]);
+            
+            // Add Navarro's narrative if present
+            if (leadDef.narrative) {
+              setMsgs(m => [...m, {
+                speaker: 'Navarro',
+                content: leadDef.narrative
+              }]);
+            }
+          });
+        }
+        
+        // Clear completed analysis after delivering results
+        setCompletedAnalysis([]);
+        console.log('📋 Analysis results delivered and cleared BEFORE AI response');
+      }
+    }
+
     console.log('📤 Sending to proxy with calculated values:', {
       currentCharacter: mentionedCharacter || currentCharacter,
       pendingAction: conversationState.pendingAction,
@@ -3250,6 +3328,9 @@ if (actionType === 'INVESTIGATIVE') {
       content: m.content
     }));
     
+    // Debug: Check completedAnalysis before sending
+    console.log('🔬 DEBUG completedAnalysis being sent:', completedAnalysis);
+    
     // Sanitize data before sending to API
     const sanitizedPayload = sanitizeForJSON({
       messages: history,
@@ -3263,7 +3344,8 @@ if (actionType === 'INVESTIGATIVE') {
         detectiveName,
         conversation: conversationContext,
         pendingAction: mentionedCharacter && mentionedCharacter !== currentCharacter ? 'MOVE_TO_CHARACTER' : conversationState.pendingAction,
-        currentCharacter: mentionedCharacter || currentCharacter
+        currentCharacter: mentionedCharacter || currentCharacter,
+        completedAnalysis: completedAnalysis
       }
     });
 
@@ -3438,73 +3520,7 @@ if (actionType === 'INVESTIGATIVE') {
             console.log(`🔬 Phone records analysis scheduled:`, analysisRecord);
           }
           
-          // Check if this is a callback for analysis results
-          const isCallback = isAnalysisResultsCallback(conversationState, completedAnalysis);
-          const resultsKeywords = ['results', 'update', 'ready', 'data', 'analysis', 'findings', 'what did you find', 'phone data'];
-          const isAskingForResults = resultsKeywords.some(keyword => input.toLowerCase().includes(keyword));
-          
-          if (isCallback && isAskingForResults && completedAnalysis.length > 0) {
-            console.log('📋 Delivering analysis results to user');
-            const analysisResults = getAnalysisResults(completedAnalysis);
-            
-            // Process each analysis result
-            analysisResults.forEach(result => {
-              // Add system message with the analysis result
-              setMsgs(m => [...m, { 
-                speaker: 'System', 
-                content: `🔬 Analysis Result: ${result.result}` 
-              }]);
-              
-              // Add any new evidence discovered
-              if (result.newEvidence && result.newEvidence.length > 0) {
-                setEvidence(prev => [...prev, ...result.newEvidence.filter(ev => !prev.includes(ev))]);
-                
-                result.newEvidence.forEach(newEv => {
-                  setMsgs(m => [...m, { 
-                    speaker: 'System', 
-                    content: `🔍 New evidence discovered: ${newEv}` 
-                  }]);
-                });
-              }
-            });
-            
-            // Generate leads that were waiting for this analysis to complete
-            const completedEvidenceIds = completedAnalysis.flatMap(analysis => analysis.evidence);
-            console.log('🔍 Checking for leads triggered by completed analysis:', completedEvidenceIds);
-            
-            const newLeads = getNewLeads({
-              evidence: evidence,
-              actionsPerformed: actionsPerformed,
-              interviewsCompleted: interviewsCompleted,
-              activeLeads: leads,
-              analysisCompleted: completedEvidenceIds
-            });
-            
-            if (newLeads.length > 0) {
-              console.log('🎯 New leads triggered by completed analysis:', newLeads.map(l => l.id));
-              setLeads(prev => [...prev, ...newLeads.map(lead => lead.id)]);
-              
-              // Add system notifications for new leads
-              newLeads.forEach(leadDef => {
-                setMsgs(m => [...m, { 
-                  speaker: 'System', 
-                  content: `🕵️ New lead unlocked: ${leadDef.description}`
-                }]);
-                
-                // Add Navarro's narrative if present
-                if (leadDef.narrative) {
-                  setMsgs(m => [...m, {
-                    speaker: 'Navarro',
-                    content: leadDef.narrative
-                  }]);
-                }
-              });
-            }
-            
-            // Clear completed analysis after delivering results
-            setCompletedAnalysis([]);
-            console.log('📋 Analysis results delivered and cleared');
-          }
+          // Analysis results are now handled BEFORE AI response - this section removed
           
           const submittedEvidence = detectEvidenceSubmission(input, evidence);
           
@@ -3678,7 +3694,6 @@ if (actionType === 'INVESTIGATIVE') {
     setMsgs(m => [...m, { speaker: 'Navarro', content: errorMessage }]);
   } finally {
     setLoading(false);
-    setInput(''); // Clear input field after all processing is done
   }
 };
 

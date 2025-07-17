@@ -246,6 +246,30 @@ WHAT YOU KNOW:
 - You were at The Lockwood Bar until midnight on the night of the murder (verifiable by Uber receipt)
 - You and Mia had recently started talking again, which made Rachel jealous
 - You noticed Rachel was overly involved in your relationship with Mia`;
+  } else if (character === "Dr. Sarah Chen") {
+    context += `
+WHAT YOU KNOW:
+- You are Dr. Sarah Chen, a forensic analyst and laboratory technician
+- You work with the police department to analyze evidence submitted by detectives
+- You are professional, thorough, and scientifically precise in your work
+- You can analyze DNA, fingerprints, blood patterns, and other physical evidence
+- You provide analysis timelines based on the complexity of the evidence
+
+CRITICAL FORENSIC CONSTRAINTS:
+- You can ONLY discuss analysis results that have been completed and are mentioned in the conversation history as System messages starting with "🔬 Analysis Result:"
+- You MUST NOT invent, assume, or hallucinate any forensic findings
+- If analysis results are available in the conversation history, you should reference them directly
+- If no analysis results are available, you can only discuss what evidence can be analyzed and provide time estimates
+- You should be helpful in guiding the detective on what evidence can be submitted for analysis
+- All your forensic statements must be based on actual analysis results from the conversation history
+
+EVIDENCE ANALYSIS CAPABILITIES:
+- Bloodstain pattern analysis
+- DNA analysis from biological samples
+- Fingerprint analysis from surfaces and objects
+- Trace evidence analysis (fibers, materials)
+- Phone records and digital evidence processing
+- Chain of custody documentation`;
   } else if (character === "Navarro") {
     // Add case knowledge for Navarro based on current evidence and leads
     context += `
@@ -313,6 +337,96 @@ If pressed about your relationship with Mia:
 - Emphasize that you were working on rebuilding trust
 - Mention that Rachel seemed possessive of Mia's time and attention`;
     }
+    
+    if (character === "Dr. Sarah Chen") {
+      // Check if analysis results are available
+      const hasCompletedAnalysis = gameState.completedAnalysis && gameState.completedAnalysis.length > 0;
+      
+      console.log('🔬 Dr. Chen context check:', {
+        hasCompletedAnalysis,
+        completedAnalysis: gameState.completedAnalysis,
+        gameStateKeys: Object.keys(gameState)
+      });
+      
+      if (hasCompletedAnalysis) {
+        // Build dynamic list of completed analysis for greeting
+        const completedAnalysisNames = [];
+        const analysisDetails = [];
+        
+        gameState.completedAnalysis.forEach(analysis => {
+          analysis.evidence.forEach(evidenceId => {
+            switch(evidenceId) {
+              case 'phone-company-records':
+                completedAnalysisNames.push('phone records');
+                analysisDetails.push(`- Phone Company Records: Phone records show Rachel Kim called Mia at 7:25 AM - suspicious timing for someone with breakfast plans. Records also show recent text exchanges between Mia and Jordan Valez over the past week, indicating renewed contact.`);
+                break;
+              case 'bloodstain':
+                completedAnalysisNames.push('blood spatter');
+                analysisDetails.push(`- Bloodstain Analysis: DNA analysis reveals a partial match to Rachel Kim. The blood pattern suggests staged cleanup.`);
+                break;
+              case 'bracelet-charm':
+                completedAnalysisNames.push('bracelet charm');
+                analysisDetails.push(`- Bracelet Charm Analysis: DNA on bracelet charm matches Rachel Kim. Charm broke during struggle, fibers suggest it was torn off.`);
+                break;
+              default:
+                completedAnalysisNames.push(evidenceId);
+                analysisDetails.push(`- ${evidenceId}: Analysis shows no significant forensic evidence.`);
+            }
+          });
+        });
+        
+        // Create dynamic greeting based on what's ready
+        let greetingHint = '';
+        if (completedAnalysisNames.length === 1) {
+          greetingHint = `I have the ${completedAnalysisNames[0]} analysis ready`;
+        } else if (completedAnalysisNames.length === 2) {
+          greetingHint = `I have the ${completedAnalysisNames[0]} and ${completedAnalysisNames[1]} analysis ready`;
+        } else if (completedAnalysisNames.length > 2) {
+          const lastItem = completedAnalysisNames[completedAnalysisNames.length - 1];
+          const allButLast = completedAnalysisNames.slice(0, -1);
+          greetingHint = `I have the ${allButLast.join(', ')}, and ${lastItem} analysis ready`;
+        }
+        
+        context += `
+AVAILABLE ANALYSIS RESULTS:
+The following analysis results are complete and ready to discuss:
+${analysisDetails.join('\n')}
+
+PROACTIVE GREETING INSTRUCTIONS:
+ALWAYS start every conversation by stating what analysis you have completed. Use this EXACT greeting:
+"I'm here, Detective. ${greetingHint}. What would you like to know?"
+
+DO NOT ask if they received results. DO NOT ask questions about the analysis. Simply STATE that you have it ready.
+This applies to ALL interactions - whether they ask for results or just want to talk.
+
+CRITICAL DIALOGUE REQUIREMENTS:
+1. Always start with the proactive greeting that mentions what analysis is ready
+2. When asked about analysis results, provide the EXACT findings listed above - be specific, not generic
+3. Quote the precise forensic conclusions, don't just say "we have data"
+4. Be proactive about sharing the key findings that matter to the investigation
+
+EXAMPLE RESPONSES:
+- When detective calls: "I'm here, Detective. ${greetingHint}. What would you like to know?"
+- When asked for results: Provide the specific findings from the analysis details above
+- NOT: "We have call logs and text message details that could provide insight."`;
+      } else {
+        context += `
+ANALYSIS STATUS: No completed analysis results are currently available. 
+
+GREETING INSTRUCTIONS:
+When the detective contacts you, use a standard greeting: "I'm here, Detective. What can I help you with?"
+
+If the detective asks about analysis results, inform them that analysis is still in progress or needs to be submitted.`;
+      }
+      
+      context += `
+ANALYSIS RESULTS PROTOCOL:
+- Be specific and detailed when discussing completed analysis results
+- Reference the exact forensic findings listed above
+- Proactively mention when results are ready for discussion
+- Always be precise and only state what the analysis results actually show
+- Do not invent, assume, or hallucinate any forensic findings`;
+    }
   }
   
   // Handle conversation ending
@@ -334,7 +448,7 @@ app.post('/chat', async (req, res) => {
   console.log('🔍 DEBUG: currentCharacter =', gameState.currentCharacter);
   
   // Build list of all possible characters
-  const allCharacters = ["Navarro", "Marvin Lott", "Rachel Kim", "Jordan Valez"];
+  const allCharacters = ["Navarro", "Marvin Lott", "Rachel Kim", "Jordan Valez", "Dr. Sarah Chen"];
   
   // Detect who should speak based on context
   const suggestedSpeaker = detectSpeakerFromContext(messages, gameState, allCharacters);
