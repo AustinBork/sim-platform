@@ -31,6 +31,21 @@ const ANALYSIS_COSTS = {
 
 const INTENT_VERBS = ['knock', 'walk', 'go to', 'head to', 'approach', 'talk to', 'visit', 'ask'];
 
+// Character type classifications for conversation flow
+const CHARACTER_TYPES = {
+  ASSISTIVE: ['Dr. Sarah Chen'], // Can auto-end conversations
+  INVESTIGATIVE: ['Marvin Lott', 'Rachel Kim', 'Jordan Valez'], // Need proper closure
+  NEUTRAL: ['Navarro'] // Special handling
+};
+
+// Helper function to get character type
+function getCharacterType(characterName) {
+  if (CHARACTER_TYPES.ASSISTIVE.includes(characterName)) return 'ASSISTIVE';
+  if (CHARACTER_TYPES.INVESTIGATIVE.includes(characterName)) return 'INVESTIGATIVE';
+  if (CHARACTER_TYPES.NEUTRAL.includes(characterName)) return 'NEUTRAL';
+  return 'UNKNOWN';
+}
+
 // Helper function to get time of day description
 function getTimeOfDay(timeInMinutes) {
   const hours = Math.floor(timeInMinutes / 60);
@@ -95,6 +110,22 @@ function getEvidenceCommentary(evidenceId) {
       return null;
   }
 }
+
+// Helper function to generate immersive fallback suggestions when characters don't respond
+function getImmersiveFallbackSuggestion(characterName) {
+  const suggestions = [
+    `Hmm, no answer. Maybe try knocking louder, Detective?`,
+    `Try calling out "${characterName}" - they might not have heard you.`,
+    `Give it another knock. Sometimes people need a moment to get to the door.`,
+    `Maybe they're not home? Try knocking once more just to be sure.`,
+    `No response yet. Try a firmer knock or call their name.`,
+    `They might be busy inside. Give them another knock, Detective.`
+  ];
+  
+  // Return a random suggestion to keep it varied
+  return suggestions[Math.floor(Math.random() * suggestions.length)];
+}
+
 // Add this conversation debug toolkit to your codebase
 const ConversationDebug = {
   // Enable or disable debug logging
@@ -271,6 +302,7 @@ export default function App() {
   const [leads, setLeads]                     = useState([]);
   const [interviewCounts, setInterviewCounts] = useState({});
   const [seenNpcInterviewed, setSeenNpcInterviewed] = useState({});
+  const [interviewInProgress, setInterviewInProgress] = useState(new Set());
   const [pendingNotifications, setPendingNotifications] = useState([]);
   const [conversationState, setConversationState] = useState({
   currentCharacter: null,
@@ -2894,8 +2926,16 @@ const sendMessage = async () => {
   const actionType = classifyAction(actionText, mentionedCharacter);
   console.log('🎯 Action classified as:', actionType, 'with mentioned character:', mentionedCharacter);
   
+  // Detect character types early for transition logic
+  const currentCharacterType = getCharacterType(currentCharacter);
+  const mentionedCharacterType = getCharacterType(mentionedCharacter);
+  
   // Check if the message is ending a conversation
-  const isEnding = enhancedConversationEndingDetection(actionText, conversationState);
+  // OVERRIDE: Don't detect ending for assistive character auto-transitions
+  let isEnding = false;
+  if (!(mentionedCharacter && mentionedCharacter !== currentCharacter && currentCharacterType === 'ASSISTIVE')) {
+    isEnding = enhancedConversationEndingDetection(actionText, conversationState);
+  }
   
   // Step 3: Handle state transitions based on action type and context
   let hasHandledTransition = false;
@@ -2908,56 +2948,168 @@ const sendMessage = async () => {
     // Transitioning to a new character - preserve memory but change context
     console.log(`🔄 Transitioning from ${currentCharacter || 'none'} to ${mentionedCharacter}`);
     
-    // Add Navarro's affirmation for character transitions FIRST
-    const affirmation = getNavarroAffirmation(actionText);
-    setMsgs(m => [...m, { speaker: 'Navarro', content: affirmation }]);
+    // Smart conversation ending based on character types
+    const fromType = currentCharacterType;
+    const toType = mentionedCharacterType;
     
-    // Add stage setting for first-time visits
-    const isFirstTime = !conversationState.characters[mentionedCharacter]?.visitCount || 
-                       conversationState.characters[mentionedCharacter]?.visitCount === 0;
-    
-    if (isFirstTime) {
-      // Add automatic stage direction for approaching and knocking on door
+    if (currentCharacter && fromType === 'ASSISTIVE') {
+      // Auto-end assistive character conversations when moving to any other character
+      console.log(`🔄 Auto-ending conversation with assistive character: ${currentCharacter}`);
       setMsgs(m => [...m, { 
         speaker: 'System', 
-        content: `*You approach ${mentionedCharacter}'s door and knock.*` 
+        content: `*You conclude your conversation with ${currentCharacter}.*` 
       }]);
-    }
-    
-    // Apply interview costs when transitioning to a new character (first time)
-    if (!seenNpcInterviewed[mentionedCharacter]) {
-      updateTimeAndInterview(mentionedCharacter);
+      setMsgs(m => [...m, { 
+        speaker: currentCharacter, 
+        content: `Of course, Detective. Let me know if you need anything else.` 
+      }]);
       
-      // Track interview completion
-      setInterviewsCompleted(prev => {
-        if (!prev.includes(mentionedCharacter)) {
-          console.log('📋 Starting interview with:', mentionedCharacter);
-          return [...prev, mentionedCharacter];
-        }
-        return prev;
-      });
-    }
-
-    // Handle scene transition properly
-    handleSceneTransition(
-      currentCharacter,
-      mentionedCharacter,
-      'MOVE_TO_CHARACTER',
-      setConversationStateWithValidation,
-      {
-        currentTime: currentClock(),
-        setMsgs,
-        setTimeElapsed,
-        setTimeRemaining,
-        detectiveName,
-        actionText
+      // Clean reset of conversation state for assistive characters
+      setConversationStateWithValidation(prev => ({
+        ...prev,
+        currentCharacter: null,
+        conversationPhase: 'NONE',
+        pendingAction: null
+      }));
+      
+      // Add Navarro's affirmation for the transition
+      const affirmation = getNavarroAffirmation(actionText);
+      setMsgs(m => [...m, { speaker: 'Navarro', content: affirmation }]);
+      
+      // Add stage direction for approaching new character
+      const isFirstTime = !conversationState.characters[mentionedCharacter]?.visitCount || 
+                         conversationState.characters[mentionedCharacter]?.visitCount === 0;
+      
+      if (isFirstTime) {
+        setMsgs(m => [...m, { 
+          speaker: 'System', 
+          content: `*You approach ${mentionedCharacter}'s door and knock.*` 
+        }]);
       }
-    );
+      
+      // Apply interview costs when transitioning to a new character (first time)
+      if (!seenNpcInterviewed[mentionedCharacter] && !interviewInProgress.has(mentionedCharacter)) {
+        setInterviewInProgress(prev => new Set([...prev, mentionedCharacter]));
+        
+        updateTimeAndInterview(mentionedCharacter);
+        
+        // Track interview completion
+        setInterviewsCompleted(prev => {
+          if (!prev.includes(mentionedCharacter)) {
+            console.log('📋 Starting interview with:', mentionedCharacter);
+            return [...prev, mentionedCharacter];
+          }
+          return prev;
+        });
+        
+        // Clear the in-progress flag after a short delay
+        setTimeout(() => {
+          setInterviewInProgress(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(mentionedCharacter);
+            return newSet;
+          });
+        }, 100);
+      }
+
+      // Handle scene transition properly for new character
+      handleSceneTransition(
+        null, // From null since we just reset
+        mentionedCharacter,
+        'MOVE_TO_CHARACTER',
+        setConversationStateWithValidation,
+        {
+          currentTime: currentClock(),
+          setMsgs,
+          setTimeElapsed,
+          setTimeRemaining,
+          detectiveName,
+          actionText
+        }
+      );
+      
+      // Mark that we handled the transition
+      hasHandledTransition = true;
+    } else if (currentCharacter && fromType === 'INVESTIGATIVE' && !isEnding) {
+      // Navarro reminds user to properly end investigative character conversations
+      console.log(`🔄 Navarro reminder for abrupt exit from: ${currentCharacter}`);
+      setMsgs(m => [...m, { 
+        speaker: 'Navarro', 
+        content: `Hold on, Detective. We should wrap up with ${currentCharacter} before moving on. It's good practice to let them know we're done.` 
+      }]);
+      // Don't proceed with transition - let user handle it properly
+      setLoading(false);
+      return;
+    }
     
-    await new Promise(resolve => setTimeout(resolve, 10));
-    
-    // Mark that we handled character transition
-    hasHandledTransition = true;
+    // Skip normal transition logic if we already handled it
+    if (hasHandledTransition) {
+      // Force complete state reset to ensure clean context
+      await new Promise(resolve => setTimeout(resolve, 150)); // Let state settle completely
+      // Don't return - let the API call proceed with clean state
+    } else {
+      // Add Navarro's affirmation for character transitions
+      const affirmation = getNavarroAffirmation(actionText);
+      setMsgs(m => [...m, { speaker: 'Navarro', content: affirmation }]);
+      
+      // Add stage setting for first-time visits
+      const isFirstTime = !conversationState.characters[mentionedCharacter]?.visitCount || 
+                         conversationState.characters[mentionedCharacter]?.visitCount === 0;
+      
+      if (isFirstTime) {
+        // Add automatic stage direction for approaching and knocking on door
+        setMsgs(m => [...m, { 
+          speaker: 'System', 
+          content: `*You approach ${mentionedCharacter}'s door and knock.*` 
+        }]);
+      }
+      
+      // Apply interview costs when transitioning to a new character (first time)
+      if (!seenNpcInterviewed[mentionedCharacter] && !interviewInProgress.has(mentionedCharacter)) {
+        setInterviewInProgress(prev => new Set([...prev, mentionedCharacter]));
+        
+        updateTimeAndInterview(mentionedCharacter);
+        
+        // Track interview completion
+        setInterviewsCompleted(prev => {
+          if (!prev.includes(mentionedCharacter)) {
+            console.log('📋 Starting interview with:', mentionedCharacter);
+            return [...prev, mentionedCharacter];
+          }
+          return prev;
+        });
+        
+        // Clear the in-progress flag after a short delay
+        setTimeout(() => {
+          setInterviewInProgress(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(mentionedCharacter);
+            return newSet;
+          });
+        }, 100);
+      }
+
+      // Handle scene transition properly
+      handleSceneTransition(
+        currentCharacter,
+        mentionedCharacter,
+        'MOVE_TO_CHARACTER',
+        setConversationStateWithValidation,
+        {
+          currentTime: currentClock(),
+          setMsgs,
+          setTimeElapsed,
+          setTimeRemaining,
+          detectiveName,
+          actionText
+        }
+      );
+      
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      // Mark that we handled character transition
+      hasHandledTransition = true;
+    }
   }
 
 // Step 3: Process action based on type
@@ -3168,11 +3320,12 @@ if (actionType === 'INVESTIGATIVE') {
           content: characterResponses[0].text 
         }]);
       } else {
-        // Fallback for character transition with no response
-        console.warn(`⚠️ No response from ${mentionedCharacter} during transition. Adding fallback.`);
+        // Fallback for character transition with no response - provide immersive suggestion
+        console.warn(`⚠️ No response from ${mentionedCharacter} during transition. Adding immersive fallback.`);
+        const suggestion = getImmersiveFallbackSuggestion(mentionedCharacter);
         setMsgs(m => [...m, { 
           speaker: 'Navarro', 
-          content: `Let's try approaching ${mentionedCharacter} again, Detective. They might be ready to talk now.`
+          content: suggestion
         }]);
       }
         
