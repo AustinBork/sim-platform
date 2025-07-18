@@ -79,6 +79,105 @@ Forensic analysis timing:
 - Stab-wound: 240 minutes (4 hours)
 - Phone records: 180 minutes (3 hours)
 
+## Recent Additions (Interrogation System)
+
+### Rachel Kim Interrogation Implementation (COMPLETED)
+### Jordan Valez Interrogation Implementation (COMPLETED)
+**Feature**: Full interrogation room system for bringing suspects to police station
+**Components Added**:
+- **INTERROGATION character type**: New classification for station interrogations vs neighborhood interviews
+- **45-minute time cost**: Reflects travel time and formal interrogation setup
+- **Accusation detection system**: Detects direct accusations and timeline confrontations
+- **Lawyer escalation**: Warning on first accusation, lawyer intervention on second
+- **Atmospheric scene setup**: Interrogation room descriptions instead of door knocking
+- **Information extraction**: 9 specific response patterns for Rachel's deflection tactics
+
+**Trigger Phrases**: "bring in Rachel", "let's question Rachel", "call in Rachel", etc.
+**Evidence Required**: Phone company records OR bracelet DNA analysis
+**Location**: App.jsx lines 35-40 (CHARACTER_TYPES), 14-18 (ACTION_COSTS), 1770-1793 (trigger phrases)
+
+### Critical Bug Fix - Variable Redeclaration (RESOLVED)
+**Problem**: Added accusation detection code that redeclared existing variables in sendMessage function scope
+**Error**: `Cannot redeclare block-scoped variable 'currentCharacter'` and `'currentCharacterType'`
+**Root Cause**: Used same variable names (`currentCharacter`, `currentCharacterType`) that already existed lower in the same function
+**Solution**: Renamed accusation detection variables to `interrogationCharacter` and `interrogationCharacterType`
+**Location**: App.jsx lines 2991-2992 (accusation detection block)
+**Lesson**: Always check for existing variable names in function scope before adding new const/let declarations
+
+### Critical Bug Fix - Rachel Interrogation Context Issue (RESOLVED)
+**Problem**: Rachel Kim responding like investigation team member instead of suspect during interrogation
+**Symptoms**: Rachel saying "That sounds like a good plan. Let's see what she has to say about her call to Mia." instead of "Hi, I don't know what's going on but I can tell something's wrong."
+**Root Cause**: proxy-server.cjs had no awareness of INTERROGATION vs INVESTIGATIVE character types
+**Missing Context**: 
+- No `currentCharacterType` being sent from App.jsx to proxy-server.cjs
+- Rachel's character context was identical for neighborhood interviews vs police station interrogations
+- No specialized opening behavior for suspects brought to station
+
+**Solution Applied**:
+1. **App.jsx**: Added `currentCharacterType: getCharacterType(currentChar)` to gameState payload (line 3516)
+2. **proxy-server.cjs**: Added interrogation-specific context detection (`gameState.currentCharacterType === 'INTERROGATION'`)
+3. **Character Context Split**: Rachel now has different personality/knowledge for:
+   - **INTERROGATION**: Confused suspect at police station, defensive, starts with specific opening line
+   - **INVESTIGATIVE**: Regular neighborhood interview context (original behavior)
+4. **Opening Line Enforcement**: Forced exact opening "Hi, I don't know what's going on but I can tell something's wrong" for interrogation scenario
+5. **Prompt Instructions**: Updated system prompt to handle interrogation room vs door knocking scenarios
+
+**Key Changes**:
+- **Line 3516 App.jsx**: Send character type to proxy
+- **Lines 233-266 proxy-server.cjs**: Interrogation vs interview context splitting  
+- **Lines 317-323 proxy-server.cjs**: Forced opening line for interrogation
+- **Lines 527-530 proxy-server.cjs**: Different prompt instructions for interrogation vs neighborhood
+
+**Lesson**: When adding new character interaction modes, ensure the AI backend (proxy-server.cjs) receives proper context about the interaction type, not just the character name. The AI needs to know WHERE the conversation is happening and WHY the character is there.
+
+### Jordan Valez Interrogation Implementation (COMPLETED)
+**Feature**: Full interrogation system for red herring suspect with volatile personality
+**Trigger System**:
+- **Phone records** (primary trigger - same as Rachel)
+- **Rachel mentioning Jordan** (secondary trigger - dynamic lead creation when Rachel mentions him during her interrogation)
+
+**Character Differences from Rachel**:
+- **Opening**: Defensive/confused "What's going on? Whatever it is you think I did, I didn't!"
+- **Death reaction**: Spaced out shock "Oh god... I... I can't believe it"
+- **Personality**: Volatile, honest, innocent but knows his history looks bad
+- **Evidence defense**: Immediately offers Uber receipt as alibi
+- **Counter-accusations**: Points to Rachel as jealous, possessive, "a little nuts"
+
+**Jordan's 3-Stage Volatile Escalation** (differs from Rachel's 2-stage polite escalation):
+1. **First accusation**: Explosive outburst "IT WASN'T ME! I was at the bar! I have proof!"
+2. **Second accusation**: Lawyer threat "You keep pushing this and I want a lawyer! This is harassment!"
+3. **Third accusation**: Lawyer demand "That's it! I'm done! Get me a lawyer NOW!" → Scene ends
+
+**Information Extraction Patterns** (9 patterns):
+- Lockwood Bar alibi with 12:05 AM timing
+- Uber receipt proof and willingness to provide
+- Restraining order explanation (not physical, just escalation)
+- Rachel accusations (possessive, jealous, never liked relationship)
+- Relationship admissions (rocky but improving)
+- Vocal innocence protests
+- Shocked death reactions
+
+**Key Implementation Details**:
+- **Line 3650-3673 App.jsx**: Dynamic lead creation when Rachel mentions Jordan
+- **Lines 268-301 proxy-server.cjs**: Interrogation vs interview context splitting
+- **Lines 350-355 proxy-server.cjs**: Forced opening line for interrogation
+- **Lines 3041-3071 App.jsx**: 3-stage volatile escalation system
+
+**Character Dynamic**: Rachel and Jordan both accuse each other, creating investigative complexity where both suspects deflect to the other, making it harder for player to identify the real killer.
+
+### Interrogation Flow
+1. **Trigger**: Player says "bring Rachel in" after evidence discovery
+2. **Navarro**: "I'll have our people bring her in for questioning"
+3. **Scene Setup**: Interrogation room atmosphere, Rachel escorted in
+4. **Rachel's Opening**: "Hi, I don't know what's going on but I can tell something's wrong"
+5. **Natural Conversation**: Evidence-based questions, emotional responses, Jordan deflection
+6. **Lawyer System**: Warning → Intervention → Scene end with Navarro commentary
+
+### Key Evidence Responses
+- **Phone timeline**: Defensive but maintains 7:25 AM call story
+- **Bracelet charm**: "I lost it a while ago, spent lots of time at Mia's"
+- **Jordan questions**: Mentions lawsuit/restraining order to deflect suspicion
+
 ## Known Issues (Current Priorities)
 
 ### 1. Character Detection Over-Sensitivity (MEDIUM)

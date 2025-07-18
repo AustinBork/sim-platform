@@ -12,9 +12,10 @@ const MODES = {
 };
 
 const ACTION_COSTS = {
-  travel:    10,
-  interview: 20,
-  followUp:  10
+  travel:       10,
+  interview:    20,
+  interrogation: 45,
+  followUp:     10
 };
 
 const ANALYSIS_COSTS = {
@@ -34,7 +35,8 @@ const INTENT_VERBS = ['knock', 'walk', 'go to', 'head to', 'approach', 'talk to'
 // Character type classifications for conversation flow
 const CHARACTER_TYPES = {
   ASSISTIVE: ['Dr. Sarah Chen'], // Can auto-end conversations
-  INVESTIGATIVE: ['Marvin Lott', 'Rachel Kim', 'Jordan Valez'], // Need proper closure
+  INVESTIGATIVE: ['Marvin Lott'], // Neighborhood interviews - need proper closure
+  INTERROGATION: ['Rachel Kim', 'Jordan Valez'], // Station interrogations - 45min cost, lawyer system
   NEUTRAL: ['Navarro'] // Special handling
 };
 
@@ -42,6 +44,7 @@ const CHARACTER_TYPES = {
 function getCharacterType(characterName) {
   if (CHARACTER_TYPES.ASSISTIVE.includes(characterName)) return 'ASSISTIVE';
   if (CHARACTER_TYPES.INVESTIGATIVE.includes(characterName)) return 'INVESTIGATIVE';
+  if (CHARACTER_TYPES.INTERROGATION.includes(characterName)) return 'INTERROGATION';
   if (CHARACTER_TYPES.NEUTRAL.includes(characterName)) return 'NEUTRAL';
   return 'UNKNOWN';
 }
@@ -362,6 +365,9 @@ const currentClock = () => START_OF_DAY + timeElapsed;
   const [completedAnalysis, setCompletedAnalysis] = useState([]);
   const [analysisNotifications, setAnalysisNotifications] = useState([]);
   const [extractedInformation, setExtractedInformation] = useState({});
+  
+  // Accusation tracking for interrogation escalation
+  const [accusationWarnings, setAccusationWarnings] = useState({});
 
   // Time skip controls
   const [showCigarMenu, setShowCigarMenu] = useState(false);
@@ -389,8 +395,10 @@ const currentClock = () => START_OF_DAY + timeElapsed;
   // Batched state update helpers to prevent race conditions
   const useBatchedGameUpdates = () => {
     // Batch time and interview tracking updates
-    const updateTimeAndInterview = useCallback((character, cost = ACTION_COSTS.interview) => {
-      console.log(`⏰ Applying interview cost: ${cost} minutes for ${character}`);
+    const updateTimeAndInterview = useCallback((character, customCost = null) => {
+      const characterType = getCharacterType(character);
+      const cost = customCost || (characterType === 'INTERROGATION' ? ACTION_COSTS.interrogation : ACTION_COSTS.interview);
+      console.log(`⏰ Applying ${characterType} cost: ${cost} minutes for ${character}`);
       // React 18 automatically batches these state updates
       setTimeElapsed(prev => prev + cost);
       setTimeRemaining(prev => prev - cost);
@@ -1221,7 +1229,43 @@ const isEndingConversation = useCallback((text, currentState) => {
     return () => clearInterval(interval);
   }, [timeElapsed, pendingAnalysis]);
 
-  // Helper function to detect character mentions in user input
+  // Helper function to detect accusatory statements toward suspects
+function detectAccusation(text, targetCharacter) {
+  const lowerText = text.toLowerCase();
+  const characterName = targetCharacter?.toLowerCase() || '';
+  
+  // Direct accusations
+  const directAccusations = [
+    'you killed', 'you murdered', 'you did this', 'you did it',
+    'you are the killer', 'you are guilty', 'you committed',
+    'you stabbed', 'you are responsible', 'you are lying'
+  ];
+  
+  // Timeline accusations  
+  const timelineAccusations = [
+    'you lied about', 'that\'s not true', 'you\'re lying about',
+    'you weren\'t there', 'your story doesn\'t', 'timeline doesn\'t match',
+    'you said', 'but you actually', 'you changed your story'
+  ];
+  
+  // Check for direct accusations
+  for (const accusation of directAccusations) {
+    if (lowerText.includes(accusation)) {
+      return { isAccusation: true, type: 'direct', phrase: accusation };
+    }
+  }
+  
+  // Check for timeline accusations
+  for (const accusation of timelineAccusations) {
+    if (lowerText.includes(accusation)) {
+      return { isAccusation: true, type: 'timeline', phrase: accusation };
+    }
+  }
+  
+  return { isAccusation: false, type: null, phrase: null };
+}
+
+// Helper function to detect character mentions in user input
 
 // Function to extract actual information from character dialogue
 function extractInformationFromDialogue(speaker, text) {
@@ -1255,33 +1299,63 @@ function extractInformationFromDialogue(speaker, text) {
   
   if (speaker === 'Rachel Kim') {
     // Extract information from Rachel's dialogue
-    if (lowerText.includes('8:00') || lowerText.includes('breakfast')) {
-      extracted.push('Had breakfast plans at 7:00 AM, called when Mia didn\'t show');
+    if (lowerText.includes('breakfast') || lowerText.includes('7:00')) {
+      extracted.push('Claims she had breakfast plans with Mia at 7:00 AM');
+    }
+    if (lowerText.includes('7:25') || lowerText.includes('called') && lowerText.includes('didn\'t show')) {
+      extracted.push('Says she called Mia at 7:25 AM when she didn\'t show up');
+    }
+    if (lowerText.includes('spare key') || lowerText.includes('key')) {
+      extracted.push('Admits to having a spare key to Mia\'s apartment');
+    }
+    if (lowerText.includes('stressed') || lowerText.includes('worried')) {
+      extracted.push('Mentions Mia was "stressed lately" about something');
     }
     if (lowerText.includes('best friend') || lowerText.includes('close')) {
-      extracted.push('Claims to be victim\'s best friend');
+      extracted.push('Becomes emotional when discussing their friendship');
     }
     if (lowerText.includes('jordan') || lowerText.includes('ex')) {
-      extracted.push('Mentioned Jordan (ex-boyfriend)');
+      extracted.push('Expresses dislike/concern about Jordan Valez');
     }
-    if (lowerText.includes('jealous') || lowerText.includes('angry')) {
-      extracted.push('Described someone as jealous/angry');
+    if (lowerText.includes('lawsuit') || lowerText.includes('restraining')) {
+      extracted.push('Mentions there was a lawsuit/restraining order involving Jordan');
+    }
+    if (lowerText.includes('bracelet') || lowerText.includes('lost it')) {
+      extracted.push('Claims she lost bracelet at Mia\'s apartment a while ago');
+    }
+    if (lowerText.includes('getting back') || lowerText.includes('reconnect')) {
+      extracted.push('Claims she was worried about Mia getting back with Jordan');
     }
   }
   
   if (speaker === 'Jordan Valez') {
     // Extract information from Jordan's dialogue
     if (lowerText.includes('lockwood') || lowerText.includes('bar')) {
-      extracted.push('Claims was at Lockwood Bar');
+      extracted.push('Claims he was at Lockwood Bar until 12:05 AM');
     }
     if (lowerText.includes('uber') || lowerText.includes('receipt')) {
-      extracted.push('Has Uber receipt as alibi');
+      extracted.push('Has Uber receipt as alibi and willing to provide it');
     }
     if (lowerText.includes('restraining order') || lowerText.includes('misunderstanding')) {
-      extracted.push('Mentioned restraining order was misunderstanding');
+      extracted.push('Says restraining order was misunderstanding, not physical');
     }
     if (lowerText.includes('rachel') && (lowerText.includes('possessive') || lowerText.includes('involved'))) {
-      extracted.push('Described Rachel as overly involved');
+      extracted.push('Describes Rachel as overly possessive of Mia');
+    }
+    if (lowerText.includes('rachel') && (lowerText.includes('jealous') || lowerText.includes('never liked'))) {
+      extracted.push('Says Rachel was jealous and never liked their relationship');
+    }
+    if (lowerText.includes('rocky') || lowerText.includes('working on') || lowerText.includes('rebuilding')) {
+      extracted.push('Admits relationship with Mia was rocky but improving');
+    }
+    if (lowerText.includes('nuts') || lowerText.includes('crazy') || lowerText.includes('obsessed')) {
+      extracted.push('Suggests Rachel had concerning behavior toward Mia');
+    }
+    if (lowerText.includes('wasn\'t me') || lowerText.includes('didn\'t do')) {
+      extracted.push('Vehemently denies involvement in murder');
+    }
+    if (lowerText.includes('oh god') || lowerText.includes('can\'t believe')) {
+      extracted.push('Shows shocked reaction to learning of death');
     }
   }
   
@@ -1420,16 +1494,24 @@ function assessConversationCompleteness(speaker, conversationState, extractedInf
       'Mentioned seeing visitors at victim\'s apartment'
     ],
     'Rachel Kim': [
-      'Had breakfast plans at 7:00 AM, called when Mia didn\'t show',
-      'Claims to be victim\'s best friend',
-      'Mentioned Jordan (ex-boyfriend)',
-      'Described someone as jealous/angry'
+      'Claims she had breakfast plans with Mia at 7:00 AM',
+      'Says she called Mia at 7:25 AM when she didn\'t show up',
+      'Admits to having a spare key to Mia\'s apartment',
+      'Mentions Mia was "stressed lately" about something',
+      'Becomes emotional when discussing their friendship',
+      'Expresses dislike/concern about Jordan Valez',
+      'Mentions there was a lawsuit/restraining order involving Jordan',
+      'Claims she was worried about Mia getting back with Jordan'
     ],
     'Jordan Valez': [
-      'Claims was at Lockwood Bar',
-      'Has Uber receipt as alibi',
-      'Mentioned restraining order was misunderstanding',
-      'Described Rachel as overly involved'
+      'Claims he was at Lockwood Bar until 12:05 AM',
+      'Has Uber receipt as alibi and willing to provide it',
+      'Says restraining order was misunderstanding, not physical',
+      'Describes Rachel as overly possessive of Mia',
+      'Says Rachel was jealous and never liked their relationship',
+      'Admits relationship with Mia was rocky but improving',
+      'Suggests Rachel had concerning behavior toward Mia',
+      'Vehemently denies involvement in murder'
     ],
     'Dr. Sarah Chen': [
       'DNA analysis can be performed on blood samples',
@@ -1757,6 +1839,15 @@ function detectCharacterMention(text, currentState, gameState) {
     { phrase: 'find', weight: 5 },
     { phrase: 'question', weight: 9 },
     { phrase: 'interrogate', weight: 10 },
+    { phrase: 'bring in', weight: 12 },
+    { phrase: 'bring them in', weight: 12 },
+    { phrase: 'bring her in', weight: 12 },
+    { phrase: 'bring him in', weight: 12 },
+    { phrase: 'call in', weight: 10 },
+    { phrase: 'have them come in', weight: 10 },
+    { phrase: 'get them here', weight: 9 },
+    { phrase: 'let\'s question', weight: 11 },
+    { phrase: 'let\'s bring', weight: 11 },
     { phrase: 'see', weight: 4 },
     { phrase: 'check on', weight: 5 }
   ];
@@ -2065,6 +2156,7 @@ function isGeneralInvestigativeAction(text) {
       interviewsCompleted,
       conversationState,
       extractedInformation,
+      accusationWarnings,
       pendingAnalysis,
       completedAnalysis,
       analysisNotifications,
@@ -2103,6 +2195,7 @@ function isGeneralInvestigativeAction(text) {
       lastResponseTime: null
     });
     setExtractedInformation(savedState.extractedInformation || {});
+    setAccusationWarnings(savedState.accusationWarnings || {});
     setPendingAnalysis(savedState.pendingAnalysis || []);
     setCompletedAnalysis(savedState.completedAnalysis || []);
     setAnalysisNotifications(savedState.analysisNotifications || []);
@@ -2913,6 +3006,98 @@ const sendMessage = async () => {
   const actionText = input; // Define actionText at the start
   setInput(''); // Clear input immediately to prevent race conditions
   
+  // Check for accusations if we're in an interrogation with a suspect
+  const interrogationCharacter = conversationState.currentCharacter;
+  const interrogationCharacterType = getCharacterType(interrogationCharacter);
+  
+  if (interrogationCharacterType === 'INTERROGATION' && interrogationCharacter) {
+    const accusationResult = detectAccusation(actionText, interrogationCharacter);
+    
+    if (accusationResult.isAccusation) {
+      const warnings = accusationWarnings[interrogationCharacter] || 0;
+      
+      // Handle different character escalation patterns
+      if (interrogationCharacter === 'Rachel Kim') {
+        // Rachel's polite escalation pattern
+        if (warnings === 0) {
+          // First accusation - polite warning
+          setAccusationWarnings(prev => ({ ...prev, [interrogationCharacter]: 1 }));
+          setMsgs(m => [...m, { speaker: 'Detective', content: actionText }]);
+          setMsgs(m => [...m, { 
+            speaker: interrogationCharacter, 
+            content: "If you're accusing me of something, I'm going to need a lawyer." 
+          }]);
+          return;
+        } else if (warnings >= 1) {
+          // Second accusation - lawyer called, end interrogation
+          setAccusationWarnings(prev => ({ ...prev, [interrogationCharacter]: 2 }));
+          setMsgs(m => [...m, { speaker: 'Detective', content: actionText }]);
+          setMsgs(m => [...m, { 
+            speaker: interrogationCharacter, 
+            content: "This is getting out of hand. I'm done talking until my lawyer comes." 
+          }]);
+          // End with lawyer scene
+        }
+      } else if (interrogationCharacter === 'Jordan Valez') {
+        // Jordan's volatile escalation pattern
+        if (warnings === 0) {
+          // First accusation - volatile outburst
+          setAccusationWarnings(prev => ({ ...prev, [interrogationCharacter]: 1 }));
+          setMsgs(m => [...m, { speaker: 'Detective', content: actionText }]);
+          setMsgs(m => [...m, { 
+            speaker: interrogationCharacter, 
+            content: "IT WASN'T ME! I was at the bar! I have proof! You think because of some stupid restraining order I'd kill her?!" 
+          }]);
+          return;
+        } else if (warnings === 1) {
+          // Second accusation - lawyer threat
+          setAccusationWarnings(prev => ({ ...prev, [interrogationCharacter]: 2 }));
+          setMsgs(m => [...m, { speaker: 'Detective', content: actionText }]);
+          setMsgs(m => [...m, { 
+            speaker: interrogationCharacter, 
+            content: "You keep pushing this and I want a lawyer! This is harassment!" 
+          }]);
+          return;
+        } else if (warnings >= 2) {
+          // Third accusation - lawyer called, end interrogation
+          setAccusationWarnings(prev => ({ ...prev, [interrogationCharacter]: 3 }));
+          setMsgs(m => [...m, { speaker: 'Detective', content: actionText }]);
+          setMsgs(m => [...m, { 
+            speaker: interrogationCharacter, 
+            content: "That's it! I'm done! Get me a lawyer NOW!" 
+          }]);
+          // End with lawyer scene
+        }
+      }
+      
+      // Common lawyer scene ending for both characters
+      if ((interrogationCharacter === 'Rachel Kim' && warnings >= 1) || 
+          (interrogationCharacter === 'Jordan Valez' && warnings >= 2)) {
+        setMsgs(m => [...m, { 
+          speaker: 'System', 
+          content: "*A lawyer enters the room*" 
+        }]);
+        setMsgs(m => [...m, { 
+          speaker: 'Lawyer', 
+          content: "I'll be taking my client now. Thanks." 
+        }]);
+        setMsgs(m => [...m, { 
+          speaker: 'Navarro', 
+          content: "Well, that could've gone better. Looks like we won't get anything else out of them, but we have other things we can do." 
+        }]);
+        
+        // End the conversation
+        setConversationStateWithValidation(prev => ({
+          ...prev,
+          currentCharacter: null,
+          conversationPhase: 'NONE',
+          pendingAction: null
+        }));
+        return;
+      }
+    }
+  }
+  
   setMsgs(m => [...m, { speaker: detectiveName, content: actionText }]);
   setLoading(true);
   
@@ -2988,12 +3173,26 @@ const sendMessage = async () => {
       // Add stage direction for approaching new character
       const isFirstTime = !conversationState.characters[mentionedCharacter]?.visitCount || 
                          conversationState.characters[mentionedCharacter]?.visitCount === 0;
+      const mentionedCharacterType = getCharacterType(mentionedCharacter);
       
       if (isFirstTime) {
-        setMsgs(m => [...m, { 
-          speaker: 'System', 
-          content: `*You approach ${mentionedCharacter}'s door and knock.*` 
-        }]);
+        if (mentionedCharacterType === 'INTERROGATION') {
+          // Interrogation room setup - no door knocking
+          setMsgs(m => [...m, { 
+            speaker: 'System', 
+            content: `*The interrogation room is dimly lit, fluorescent lights casting harsh shadows across the metal table.*` 
+          }]);
+          setMsgs(m => [...m, { 
+            speaker: 'System', 
+            content: `*${mentionedCharacter} is escorted in and sits across from you. The room falls silent except for the hum of the air conditioning.*` 
+          }]);
+        } else {
+          // Regular neighborhood interview - door knocking
+          setMsgs(m => [...m, { 
+            speaker: 'System', 
+            content: `*You approach ${mentionedCharacter}'s door and knock.*` 
+          }]);
+        }
       }
       
       // Apply interview costs when transitioning to a new character (first time)
@@ -3064,13 +3263,26 @@ const sendMessage = async () => {
       // Add stage setting for first-time visits
       const isFirstTime = !conversationState.characters[mentionedCharacter]?.visitCount || 
                          conversationState.characters[mentionedCharacter]?.visitCount === 0;
+      const mentionedCharacterType = getCharacterType(mentionedCharacter);
       
       if (isFirstTime) {
-        // Add automatic stage direction for approaching and knocking on door
-        setMsgs(m => [...m, { 
-          speaker: 'System', 
-          content: `*You approach ${mentionedCharacter}'s door and knock.*` 
-        }]);
+        if (mentionedCharacterType === 'INTERROGATION') {
+          // Interrogation room setup - no door knocking
+          setMsgs(m => [...m, { 
+            speaker: 'System', 
+            content: `*The interrogation room is dimly lit, fluorescent lights casting harsh shadows across the metal table.*` 
+          }]);
+          setMsgs(m => [...m, { 
+            speaker: 'System', 
+            content: `*${mentionedCharacter} is escorted in and sits across from you. The room falls silent except for the hum of the air conditioning.*` 
+          }]);
+        } else {
+          // Regular neighborhood interview - door knocking
+          setMsgs(m => [...m, { 
+            speaker: 'System', 
+            content: `*You approach ${mentionedCharacter}'s door and knock.*` 
+          }]);
+        }
       }
       
       // Apply interview costs when transitioning to a new character (first time)
@@ -3153,17 +3365,31 @@ if (actionType === 'INVESTIGATIVE') {
                      conversationState.characters[mentionedCharacter]?.visitCount === 0;
   
   if (isFirstTime) {
-    // Add automatic stage direction for approaching and knocking on door
-    setMsgs(m => [...m, { 
-      speaker: 'System', 
-      content: `*You approach ${mentionedCharacter} to speak with them.*` 
-    }]);
+    const mentionedCharacterType = getCharacterType(mentionedCharacter);
     
-    // Add automatic knocking stage direction
-    setMsgs(m => [...m, { 
-      speaker: 'System', 
-      content: `*You knock on the door.*` 
-    }]);
+    if (mentionedCharacterType === 'INTERROGATION') {
+      // Interrogation room setup - no door knocking
+      setMsgs(m => [...m, { 
+        speaker: 'System', 
+        content: `*The interrogation room is dimly lit, fluorescent lights casting harsh shadows across the metal table.*` 
+      }]);
+      setMsgs(m => [...m, { 
+        speaker: 'System', 
+        content: `*${mentionedCharacter} is escorted in and sits across from you. The room falls silent except for the hum of the air conditioning.*` 
+      }]);
+    } else {
+      // Regular neighborhood interview - door knocking
+      setMsgs(m => [...m, { 
+        speaker: 'System', 
+        content: `*You approach ${mentionedCharacter} to speak with them.*` 
+      }]);
+      
+      // Add automatic knocking stage direction
+      setMsgs(m => [...m, { 
+        speaker: 'System', 
+        content: `*You knock on the door.*` 
+      }]);
+    }
   }
 } else if (currentCharacter && isEnding) {
   // Assess conversation completeness before ending
@@ -3332,6 +3558,7 @@ if (actionType === 'INVESTIGATIVE') {
     console.log('🔬 DEBUG completedAnalysis being sent:', completedAnalysis);
     
     // Sanitize data before sending to API
+    const currentChar = mentionedCharacter || currentCharacter;
     const sanitizedPayload = sanitizeForJSON({
       messages: history,
       gameState: {
@@ -3344,7 +3571,8 @@ if (actionType === 'INVESTIGATIVE') {
         detectiveName,
         conversation: conversationContext,
         pendingAction: mentionedCharacter && mentionedCharacter !== currentCharacter ? 'MOVE_TO_CHARACTER' : conversationState.pendingAction,
-        currentCharacter: mentionedCharacter || currentCharacter,
+        currentCharacter: currentChar,
+        currentCharacterType: getCharacterType(currentChar),
         completedAnalysis: completedAnalysis
       }
     });
@@ -3457,6 +3685,33 @@ if (actionType === 'INVESTIGATIVE') {
               const newInfo = extracted.filter(info => !current.includes(info));
               if (newInfo.length > 0) {
                 console.log(`🔍 Extracted new information from ${speaker}:`, newInfo);
+                
+                // Check if Rachel mentioned Jordan and unlock Jordan interrogation if needed
+                if (speaker === 'Rachel Kim' && !leads.includes('interview-jordan')) {
+                  const mentionsJordan = newInfo.some(info => 
+                    info.toLowerCase().includes('jordan') || 
+                    info.toLowerCase().includes('ex') ||
+                    info.toLowerCase().includes('restraining order')
+                  );
+                  
+                  if (mentionsJordan) {
+                    console.log(`🎯 Rachel mentioned Jordan - unlocking Jordan interrogation`);
+                    setLeads(prev => [...prev, 'interview-jordan']);
+                    
+                    // Add system notification about new lead
+                    setTimeout(() => {
+                      setMsgs(m => [...m, { 
+                        speaker: 'System', 
+                        content: `🕵️ New lead unlocked: Interview Jordan Valez, the ex-boyfriend.`
+                      }]);
+                      setMsgs(m => [...m, { 
+                        speaker: 'Navarro', 
+                        content: `Rachel brought up Jordan. We should definitely question him about his relationship with Mia and verify his alibi.`
+                      }]);
+                    }, 1000);
+                  }
+                }
+                
                 return {
                   ...prev,
                   [speaker]: [...current, ...newInfo]

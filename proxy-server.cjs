@@ -229,7 +229,32 @@ WHAT YOU KNOW:
 - You sometimes saw Mia with visitors, including a woman who visited frequently and a man who had arguments with her
 - You believe you might have seen someone leaving the building around 3:45 AM`;
   } else if (character === "Rachel Kim") {
-    context += `
+    // Check if this is an interrogation scenario
+    const isInterrogation = gameState.currentCharacterType === 'INTERROGATION';
+    
+    if (isInterrogation) {
+      context += `
+INTERROGATION SCENARIO:
+- You have been brought to the police station for questioning
+- You don't know exactly why you're here - just that it's about Mia's death
+- You're nervous, confused, and defensive
+- You are Mia's best friend (and secretly her killer, but they don't know that)
+- You need to appear shocked and helpful while being careful not to reveal your guilt
+- You killed Mia because she was rekindling her relationship with Jordan and you were jealous
+- You called Mia at 7:25 AM before "discovering" the body, but you'll claim it was because she didn't show for breakfast
+- You left a bracelet charm at the scene accidentally during the struggle
+
+PERSONALITY IN INTERROGATION:
+- Start confused and concerned: "Hi, I don't know what's going on but I can tell something's wrong"
+- Be emotional and teary-eyed about Mia's death
+- Show willingness to help but become defensive when pressed
+- Deflect suspicion toward Jordan whenever possible (mention his anger, the restraining order)
+- If confronted with evidence, provide reasonable explanations (bracelet: "I lost it a while ago, I spent lots of time at Mia's")
+
+CRITICAL: You are NOT part of the investigation team. You are the suspect being questioned.`;
+    } else {
+      // Regular interview context (neighborhood/crime scene)
+      context += `
 WHAT YOU KNOW:
 - You are Mia's best friend (and secretly her killer)
 - You're pretending to be distraught about her death
@@ -238,14 +263,42 @@ WHAT YOU KNOW:
 - You killed Mia because she was rekindling her relationship with Jordan
 - The truth is that you called Mia at 7:25 AM, before you "found" the body
 - You left a bracelet charm at the scene accidentally`;
+    }
   } else if (character === "Jordan Valez") {
-    context += `
+    // Check if this is an interrogation scenario
+    const isInterrogation = gameState.currentCharacterType === 'INTERROGATION';
+    
+    if (isInterrogation) {
+      context += `
+INTERROGATION SCENARIO:
+- You have been brought to the police station for questioning about Mia's death
+- You don't know she's dead yet - you're confused and defensive about why you're here
+- You are Mia's ex-boyfriend and you know how this could look with your history
+- You are INNOCENT but know your past makes you look suspicious
+- You had a restraining order in the past but it wasn't physical - relationship was rocky but escalated
+- You were genuinely trying to rebuild trust with Mia and were making progress
+- You have a solid alibi: at Lockwood Bar until 12:05 AM with Uber receipt as proof
+
+PERSONALITY IN INTERROGATION:
+- Start defensive and confused: "What's going on? Whatever it is you think I did, I didn't!"
+- When told about death: shocked, spaced out "Oh god... I... I can't believe it"
+- Be honest about restraining order but explain it wasn't physical violence
+- Get VOLATILE when accused directly - loud "IT WASN'T ME!" before threatening lawyer
+- Immediately offer Uber receipt as alibi when questioned about whereabouts
+- Point suspicion toward Rachel - she was jealous, possessive, "a little nuts sometimes"
+- Emphasize that Rachel never liked you and Mia talking/getting back together
+
+CRITICAL: You are NOT part of the investigation. You are the suspect being questioned and you're innocent.`;
+    } else {
+      // Regular interview context (neighborhood/crime scene)
+      context += `
 WHAT YOU KNOW:
 - You are Mia's ex-boyfriend
 - You had a restraining order against you in the past, but claim it was a misunderstanding
 - You were at The Lockwood Bar until midnight on the night of the murder (verifiable by Uber receipt)
 - You and Mia had recently started talking again, which made Rachel jealous
 - You noticed Rachel was overly involved in your relationship with Mia`;
+    }
   } else if (character === "Dr. Sarah Chen") {
     context += `
 WHAT YOU KNOW:
@@ -288,8 +341,22 @@ ${gameState.leads?.length > 0 ? `LEADS SO FAR:\n- ${gameState.leads.join('\n- ')
   if (gameState.conversationPhase === 'GREETING' || 
       (!gameState.conversation || gameState.conversation.state === 'INITIAL')) {
     // First time meeting
-    context += `
+    if (character === "Rachel Kim" && gameState.currentCharacterType === 'INTERROGATION') {
+      context += `
+IMPORTANT: This is your FIRST time being brought to the police station for questioning. You must start with EXACTLY this opening line:
+"Hi, I don't know what's going on but I can tell something's wrong."
+
+You are confused about why you've been brought here and nervous about the formal setting. You don't know what evidence they might have.`;
+    } else if (character === "Jordan Valez" && gameState.currentCharacterType === 'INTERROGATION') {
+      context += `
+IMPORTANT: This is your FIRST time being brought to the police station for questioning. You must start with EXACTLY this opening line:
+"What's going on? Whatever it is you think I did, I didn't!"
+
+You are defensive and confused about why you've been brought here. You don't know Mia is dead yet and are assuming they think you did something wrong.`;
+    } else {
+      context += `
 IMPORTANT: This is your FIRST conversation with the detective. React appropriately surprised/concerned about being questioned.`;
+    }
   } 
   else if (gameState.conversationPhase === 'QUESTIONING' && gameState.conversation?.state === 'RETURNING') {
     // Returning to character after speaking with them before
@@ -446,6 +513,7 @@ app.post('/chat', async (req, res) => {
   console.log('💬 Last message:', messages[messages.length - 1]);
   console.log('🔍 DEBUG: pendingAction =', gameState.pendingAction);
   console.log('🔍 DEBUG: currentCharacter =', gameState.currentCharacter);
+  console.log('🔍 DEBUG: currentCharacterType =', gameState.currentCharacterType);
   
   // Build list of all possible characters
   const allCharacters = ["Navarro", "Marvin Lott", "Rachel Kim", "Jordan Valez", "Dr. Sarah Chen"];
@@ -490,7 +558,9 @@ The speaker MUST be "${suggestedSpeaker}" unless there is a compelling reason fo
 ${conversationContext}
 
 ${gameState.pendingAction === 'MOVE_TO_CHARACTER' ? 
-    `The detective has already approached ${suggestedSpeaker} and knocked on the door. DO NOT generate any stage directions - only generate dialogue. Have ${suggestedSpeaker} respond to the door knock as if greeting the detective for the first time.` :
+    (gameState.currentCharacterType === 'INTERROGATION' ? 
+      `The detective is in an interrogation room and ${suggestedSpeaker} has been brought in for questioning. DO NOT generate any stage directions - only generate dialogue. Have ${suggestedSpeaker} respond as someone who has been brought to the police station and is confused about why they're there.` :
+      `The detective has already approached ${suggestedSpeaker} and knocked on the door. DO NOT generate any stage directions - only generate dialogue. Have ${suggestedSpeaker} respond to the door knock as if greeting the detective for the first time.`) :
     gameState.pendingAction === 'CONTINUE_CONVERSATION' ?
     `The detective is continuing the conversation with ${suggestedSpeaker}. Have ${suggestedSpeaker} respond to the detective's question with new information that hasn't been shared before.` :
     gameState.pendingAction === 'END_CONVERSATION' ?
