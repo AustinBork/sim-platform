@@ -940,3 +940,180 @@ Applied targeted adjustments to the SVG map based on user feedback to resolve la
 - Path animation for location transitions
 - Map zoom functionality for detailed building views
 - Advanced architectural theming for different neighborhood districts
+
+## Critical Dialogue System Bugs (January 2025)
+
+### Overview
+Multiple critical failures discovered during Rachel/Jordan interrogation sequence playthrough. These bugs affect core dialogue system functionality, character detection, state management, and user experience. Priority repair needed for production stability.
+
+### BUG #1: Character Detection Misfire (CRITICAL - UNRESOLVED)
+**Problem**: Asking Jordan "what do you know about rachel?" incorrectly triggers character transition to Rachel instead of continuing Jordan conversation
+**Symptoms**: 
+- User asks Jordan about Rachel's behavior
+- System detects "Rachel Kim with score 10" 
+- Unwanted transition: "Transitioning from Jordan Valez to Rachel Kim"
+- Interrogation flow completely broken
+
+**Root Cause**: Character detection system treats ANY mention of character name as transition intent
+**Location**: App.jsx:1765-1941 (detectCharacterMention function)
+**Evidence**: 
+```javascript
+App.jsx:1937 ✅ Detected Rachel Kim with score 10
+App.jsx:3143 🔄 Transitioning from Jordan Valez to Rachel Kim
+```
+
+**Solution Needed**: Context-aware detection to distinguish "ask about X" vs "talk to X"
+```javascript
+// Proposed fix in detectCharacterMention
+function detectCharacterMention(text, currentCharacter) {
+  if (currentCharacter && isAskingAboutSomeone(text)) {
+    return null; // Don't transition when asking ABOUT someone
+  }
+  // Existing scoring logic...
+}
+```
+
+### BUG #2: JSON Response Corruption (CRITICAL - UNRESOLVED)
+**Problem**: Malformed dialogue JSON with duplicate text fields causing parsing failures
+**Symptoms**: `"","text":"Oh my God! No, not Mia! What happened? I just saw her yesterday!"}"`
+**Root Cause**: Response formatting issues in proxy-server.cjs during AI response generation
+**Location**: proxy-server.cjs:600-747 (response generation and parsing)
+**Impact**: Broken dialogue display, potential UI corruption
+
+**Solution Needed**: Response validation and cleanup before sending to client
+- Add JSON structure validation
+- Implement response sanitization
+- Add fallback for malformed responses
+
+### BUG #3: sendMessage Infinite Loop (CRITICAL - RESOLVED)
+**Problem**: 15+ consecutive sendMessage calls creating race conditions and performance issues
+**Evidence**: Console shows `🚀 Starting sendMessage with current state: Object` repeated 15+ times
+**Root Cause**: No call deduplication, rate limiting, or processing state management
+**Location**: App.jsx:2999 (sendMessage function)
+**Impact**: Browser performance degradation, potential freeze, API rate limiting
+
+**Solution Implemented**: Added processing state guard with proper flag management
+```javascript
+// IMPLEMENTED FIX in App.jsx:450, 3153-3161, 4112-4113
+const [isProcessingMessage, setIsProcessingMessage] = useState(false);
+
+// In sendMessage function:
+if (isProcessingMessage) {
+  console.log('⚠️ sendMessage already in progress, skipping to prevent infinite loop');
+  return;
+}
+setIsProcessingMessage(true);
+
+// In finally block:
+setIsProcessingMessage(false);
+console.log('✅ sendMessage processing complete, flag cleared');
+```
+
+**Verification**: 
+- ✅ State variable added: `isProcessingMessage` 
+- ✅ Early return guard prevents concurrent calls
+- ✅ Flag properly set and cleared in try/finally block
+- ✅ Console logging for debugging verification
+- ✅ Infinite loop condition eliminated
+
+**Implementation Error Fixed**: 
+- ❌ **Initial Error**: Added extra `try {` block at line 3166, creating nested try blocks
+- ✅ **Resolution**: Removed redundant try block - existing try-catch at line 3610 was sufficient
+- 🔍 **Lesson**: Always check for existing try-catch structures before adding new ones
+- 📋 **Future Check**: Search for existing `try {` patterns before implementing new error handling
+
+### BUG #4: Character Attribution Confusion (HIGH - UNRESOLVED)
+**Problem**: Characters speaking dialogue intended for other characters or system
+**Symptoms**: Rachel saying "in for questioning. Let's see what she has to say..." (should be Navarro/system)
+**Root Cause**: Character context bleeding in proxy-server.cjs AI response generation
+**Location**: proxy-server.cjs:338-522 (generateConversationContext function)
+**Impact**: Immersion-breaking dialogue, character consistency issues
+
+**Solution Needed**: 
+- Strengthen character context isolation
+- Add speaker validation in proxy responses
+- Implement response correction for misattributed dialogue
+
+### BUG #5: State Synchronization Failure (HIGH - UNRESOLVED)
+**Problem**: Async state updates causing conflicting character states
+**Evidence**: 
+```
+🔄 Transitioning from Jordan Valez to Rachel Kim
+🔧 Continuing conversation with Jordan Valez  // Contradiction
+```
+**Root Cause**: Race conditions between character transition and conversation continuation logic
+**Location**: App.jsx:3143, 3430 (transition and continuation logic)
+**Impact**: Unpredictable character behavior, conversation state corruption
+
+**Solution Needed**: Proper async state coordination with transition locks
+
+### BUG #6: Lead Notes System Failures (MEDIUM - UNRESOLVED)
+**Problem**: Investigation leads not appearing in detective notepad despite being unlocked
+**Symptoms**: Multiple `⚠️ Lead not added to notes: [lead-name] conditions not met` warnings
+**Affected Leads**: interview-marvin, apartment-search, interview-jordan, victim-background
+**Location**: App.jsx:1152 (lead condition checking)
+**Impact**: Players missing important investigation guidance
+
+**Investigation Needed**: Audit lead condition logic and requirements
+
+### BUG #7: Character Transition Fallback Triggered (MEDIUM - UNRESOLVED)
+**Problem**: System falling back to immersive suggestions during failed character transitions
+**Evidence**: `⚠️ No response from Rachel Kim during transition. Adding immersive fallback.`
+**Location**: App.jsx:3634
+**Impact**: Poor user experience, breaks conversation immersion
+
+## Priority Repair Plan
+
+### Phase 1 - Critical Fixes (Week 1)
+1. **Character Detection Context Awareness**: Fix over-sensitive character mention detection
+2. **sendMessage Debouncing**: Prevent infinite loop conditions
+3. **JSON Response Validation**: Fix malformed dialogue responses
+
+### Phase 2 - Stability Improvements (Week 2)
+4. **Character Attribution**: Fix dialogue speaker confusion
+5. **State Synchronization**: Implement proper async coordination
+6. **Lead Notes System**: Audit and repair condition checking
+
+### Phase 3 - Architecture Improvements (Weeks 3-4)
+7. **Dialogue Controller Extraction**: Break up monolithic App.jsx
+8. **Conversation State Machine**: Implement proper state management
+9. **Error Recovery**: Add graceful degradation mechanisms
+
+## Debug Monitoring Recommendations
+
+### Add Instrumentation
+```javascript
+// Character detection validation
+ConversationDebug.logTransition(from, to, `Intent: ${userIntent}`);
+
+// State corruption detection  
+ConversationDebug.validateStateTransition(prevState, newState);
+
+// Performance monitoring
+ConversationDebug.logPerformance('sendMessage', executionTime);
+```
+
+### Error Boundaries
+- Wrap dialogue components in React Error Boundaries
+- Graceful degradation for AI API failures  
+- State recovery mechanisms for corrupted conversations
+
+## Technical Debt Assessment
+
+### Monolithic Controller Issues
+- **App.jsx**: 4,303 lines handling ALL dialogue logic
+- **Multiple Responsibilities**: Character detection, state management, UI updates, API calls
+- **Testing Difficulty**: Impossible to unit test individual components
+
+### State Management Fragility  
+- **15+ interdependent state variables**
+- **No state validation middleware**
+- **Async update coordination issues**
+- **Race condition vulnerabilities**
+
+## Lessons Learned
+1. **Character Detection**: Need context-aware NLP, not just keyword matching
+2. **State Management**: Complex dialogue systems require formal state machines
+3. **Error Handling**: Graceful degradation essential for AI-driven systems
+4. **Performance**: Message processing needs rate limiting and deduplication
+5. **Architecture**: Monolithic controllers become unmaintainable beyond 1000 lines

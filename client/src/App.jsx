@@ -447,6 +447,7 @@ const currentClock = () => START_OF_DAY + timeElapsed;
   const [showNotepad, setShowNotepad]         = useState(false);
   const [showAccuseModal, setShowAccuseModal] = useState(false);
   const [selectedSuspect, setSelectedSuspect] = useState('');
+  const [isProcessingMessage, setIsProcessingMessage] = useState(false); // Prevent infinite loops
   const [hasSave, setHasSave]                 = useState(false);
   const [savedState, setSavedState]           = useState(null);
   const scrollRef                             = useRef(null);
@@ -3147,7 +3148,17 @@ const sendMessage = async () => {
     currentCharacter: conversationState.currentCharacter,
     pendingAction: conversationState.pendingAction
   });
+  
+  // CRITICAL FIX: Prevent infinite loop - exit if already processing
+  if (isProcessingMessage) {
+    console.log('⚠️ sendMessage already in progress, skipping to prevent infinite loop');
+    return;
+  }
+  
   if (!input.trim()) return;
+  
+  // Set processing flag to prevent concurrent calls
+  setIsProcessingMessage(true);
   
   const actionText = input; // Define actionText at the start
   setInput(''); // Clear input immediately to prevent race conditions
@@ -4095,6 +4106,9 @@ if (actionType === 'INVESTIGATIVE') {
     setMsgs(m => [...m, { speaker: 'Navarro', content: errorMessage }]);
   } finally {
     setLoading(false);
+    // CRITICAL FIX: Always clear processing flag to prevent permanent lock
+    setIsProcessingMessage(false);
+    console.log('✅ sendMessage processing complete, flag cleared');
   }
 };
 
