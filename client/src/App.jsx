@@ -37,7 +37,8 @@ const CHARACTER_TYPES = {
   ASSISTIVE: ['Dr. Sarah Chen'], // Can auto-end conversations
   INVESTIGATIVE: ['Marvin Lott'], // Neighborhood interviews - need proper closure
   INTERROGATION: ['Rachel Kim', 'Jordan Valez'], // Station interrogations - 45min cost, lawyer system
-  NEUTRAL: ['Navarro'] // Special handling
+  NEUTRAL: ['Navarro'], // Special handling
+  TRIAL: ['Judge'] // Hard-coded trial dialogue only
 };
 
 // Helper function to get character type
@@ -46,6 +47,7 @@ function getCharacterType(characterName) {
   if (CHARACTER_TYPES.INVESTIGATIVE.includes(characterName)) return 'INVESTIGATIVE';
   if (CHARACTER_TYPES.INTERROGATION.includes(characterName)) return 'INTERROGATION';
   if (CHARACTER_TYPES.NEUTRAL.includes(characterName)) return 'NEUTRAL';
+  if (CHARACTER_TYPES.TRIAL.includes(characterName)) return 'TRIAL';
   return 'UNKNOWN';
 }
 
@@ -127,6 +129,116 @@ function getImmersiveFallbackSuggestion(characterName) {
   
   // Return a random suggestion to keep it varied
   return suggestions[Math.floor(Math.random() * suggestions.length)];
+}
+
+// Helper function to format evidence for trial dialogue
+function formatEvidenceForTrial(evidence, completedAnalysis, extractedInformation) {
+  const evidenceList = [];
+  
+  // Add physical evidence
+  evidence.forEach(evidenceId => {
+    switch(evidenceId) {
+      case 'bloodstain':
+        evidenceList.push('blood spatter analysis');
+        break;
+      case 'stab-wound':
+        evidenceList.push('wound pattern analysis');
+        break;
+      case 'bracelet-charm':
+        evidenceList.push('bracelet charm found under the couch');
+        break;
+      case 'phone-company-records':
+        evidenceList.push('phone company records showing suspicious call timing');
+        break;
+      case 'partial-cleaning':
+        evidenceList.push('evidence of attempted crime scene cleanup');
+        break;
+      case 'missing-phone':
+        evidenceList.push('victim\'s missing phone');
+        break;
+      case 'no-forced-entry':
+        evidenceList.push('no signs of forced entry');
+        break;
+      case 'window-ajar':
+        evidenceList.push('window left ajar as potential exit route');
+        break;
+      case 'locked-door':
+        evidenceList.push('door locked from inside');
+        break;
+      case 'partial-print-knife':
+        evidenceList.push('partial fingerprints on the murder weapon');
+        break;
+      default:
+        evidenceList.push(evidenceId.replace('-', ' '));
+    }
+  });
+  
+  // Add completed analysis results
+  completedAnalysis.forEach(analysis => {
+    if (analysis.evidenceId === 'bracelet-charm') {
+      evidenceList.push('DNA analysis linking bracelet to suspect');
+    } else if (analysis.evidenceId === 'phone-company-records') {
+      evidenceList.push('phone records contradicting timeline');
+    }
+  });
+  
+  return evidenceList.length > 0 ? evidenceList.join(', ') : 'circumstantial evidence';
+}
+
+// Helper function to determine current location based on game state
+function getCurrentLocation(conversationState, trialPhase, interviewsCompleted, lastActionText = '') {
+  // Trial sequence locations
+  if (trialPhase === 'VERDICT' || trialPhase === 'ENDED') {
+    return 'courtroom';
+  }
+  
+  // Character-based locations
+  const currentCharacter = conversationState.currentCharacter;
+  if (currentCharacter) {
+    switch (currentCharacter) {
+      case 'Marvin Lott':
+        return 'marvin-apartment';
+      case 'Dr. Sarah Chen':
+        return 'detective-hq';
+      case 'Rachel Kim':
+        // Check if it's interrogation or interview
+        const characterType = getCharacterType(currentCharacter);
+        if (characterType === 'INTERROGATION') {
+          return 'detective-hq';
+        }
+        // Only show Rachel's house if she's been interviewed
+        return interviewsCompleted.includes('Rachel Kim') ? 'rachel-house' : 'detective-hq';
+      case 'Jordan Valez':
+        // Check if it's interrogation or interview
+        const jordanType = getCharacterType(currentCharacter);
+        if (jordanType === 'INTERROGATION') {
+          return 'detective-hq';
+        }
+        // Only show Jordan's house if he's been interviewed
+        return interviewsCompleted.includes('Jordan Valez') ? 'jordan-house' : 'detective-hq';
+      case 'Judge':
+        return 'courtroom';
+      case 'Navarro':
+      default:
+        // Crime scene actions with Navarro
+        const lowerAction = lastActionText.toLowerCase();
+        if (lowerAction.includes('search') || lowerAction.includes('photograph') || 
+            lowerAction.includes('examine') || lowerAction.includes('investigate')) {
+          return 'crime-scene';
+        }
+        return 'crime-scene'; // Default for Navarro
+    }
+  }
+  
+  // Action-based location detection
+  const lowerAction = lastActionText.toLowerCase();
+  if (lowerAction.includes('search') || lowerAction.includes('photograph') || 
+      lowerAction.includes('examine') || lowerAction.includes('investigate')) {
+    return 'crime-scene';
+  }
+  
+  // Default to crime scene
+  return 'crime-scene';
 }
 
 // Add this conversation debug toolkit to your codebase
@@ -368,6 +480,17 @@ const currentClock = () => START_OF_DAY + timeElapsed;
   
   // Accusation tracking for interrogation escalation
   const [accusationWarnings, setAccusationWarnings] = useState({});
+
+  // Trial system state
+  const [trialInProgress, setTrialInProgress] = useState(false);
+  const [trialPhase, setTrialPhase] = useState('NONE'); // 'NONE', 'ACCUSATION', 'TRIAL', 'VERDICT', 'ENDED'
+  const [accusedSuspect, setAccusedSuspect] = useState(null);
+  const [showTrialContinue, setShowTrialContinue] = useState(false);
+  const [showGameEndScreen, setShowGameEndScreen] = useState(false);
+  const [gameEndType, setGameEndType] = useState(''); // 'WIN' or 'LOSE'
+
+  // Location tracking for mini-map
+  const [currentLocation, setCurrentLocation] = useState('crime-scene'); // Default to crime scene
 
   // Time skip controls
   const [showCigarMenu, setShowCigarMenu] = useState(false);
@@ -1173,6 +1296,15 @@ const isEndingConversation = useCallback((text, currentState) => {
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [msgs, showAccuseModal, showNotepad]);
+
+  // —— LOCATION TRACKING ——
+  useEffect(() => {
+    // Update location based on game state
+    const newLocation = getCurrentLocation(conversationState, trialPhase, interviewsCompleted, input);
+    if (newLocation !== currentLocation) {
+      setCurrentLocation(newLocation);
+    }
+  }, [conversationState, trialPhase, interviewsCompleted, input, currentLocation]);
 
   // —— FORENSIC ANALYSIS TIMER —— 
   useEffect(() => {
@@ -2160,7 +2292,14 @@ function isGeneralInvestigativeAction(text) {
       pendingAnalysis,
       completedAnalysis,
       analysisNotifications,
-      theoryBoardState
+      theoryBoardState,
+      trialInProgress,
+      trialPhase,
+      accusedSuspect,
+      showTrialContinue,
+      showGameEndScreen,
+      gameEndType,
+      currentLocation
     };
     localStorage.setItem('first48_save', JSON.stringify(toSave));
     setHasSave(true);
@@ -2204,6 +2343,13 @@ function isGeneralInvestigativeAction(text) {
       connections: [],
       cardScale: 1
     });
+    setTrialInProgress(savedState.trialInProgress || false);
+    setTrialPhase(savedState.trialPhase || 'NONE');
+    setAccusedSuspect(savedState.accusedSuspect || null);
+    setShowTrialContinue(savedState.showTrialContinue || false);
+    setShowGameEndScreen(savedState.showGameEndScreen || false);
+    setGameEndType(savedState.gameEndType || '');
+    setCurrentLocation(savedState.currentLocation || 'crime-scene');
   };
 
   // —— TIME SKIP FUNCTIONS ——
@@ -3963,10 +4109,62 @@ if (actionType === 'INVESTIGATIVE') {
   };
   
   const submitAccusation = () => {
-    const correct = selectedSuspect === caseData.solution;
-    const ep = correct ? caseData.epilogues.win : caseData.epilogues.lose;
-    setMsgs(m => [...m, { speaker: 'Navarro', content: `*You accuse ${selectedSuspect}.*\n\n${ep}` }]);
+    // Start the trial sequence
+    setAccusedSuspect(selectedSuspect);
+    setTrialInProgress(true);
+    setTrialPhase('ACCUSATION');
     setShowAccuseModal(false);
+    
+    // Start with Navarro's accusation statement
+    const formattedEvidence = formatEvidenceForTrial(evidence, completedAnalysis, extractedInformation);
+    const navarroAccusation = `We are accusing ${selectedSuspect} for the murder of Mia Rodriguez. Based on evidence found: ${formattedEvidence}, we have come to the conclusion that this person is the one who committed the crime.`;
+    
+    setMsgs(m => [...m, { speaker: 'Navarro', content: navarroAccusation }]);
+    
+    // Set up conversation state for trial
+    setConversationState(prev => ({
+      ...prev,
+      currentCharacter: 'Navarro',
+      conversationPhase: 'QUESTIONING'
+    }));
+    
+    // After a brief pause, proceed to trial narration
+    setTimeout(() => {
+      setTrialPhase('TRIAL');
+      const systemNarration = "Over the course of a few long hours, the court, judge, and lawyers go over all the evidence...";
+      setMsgs(m => [...m, { speaker: 'System', content: systemNarration }]);
+      
+      // Then proceed to Judge verdict
+      setTimeout(() => {
+        setTrialPhase('VERDICT');
+        setConversationState(prev => ({
+          ...prev,
+          currentCharacter: 'Judge',
+          conversationPhase: 'QUESTIONING'
+        }));
+        
+        // Determine verdict
+        const isGuilty = selectedSuspect === 'Rachel Kim';
+        const verdict = isGuilty ? 'GUILTY' : 'NOT GUILTY';
+        const judgeVerdict = `Based on all the evidence collected, statements from the accused, and statements from the lawyer, the defendant ${selectedSuspect} has been found ${verdict}.`;
+        
+        setMsgs(m => [...m, { speaker: 'Judge', content: judgeVerdict }]);
+        
+        // Final Navarro response
+        setTimeout(() => {
+          setTrialPhase('ENDED');
+          const navarroResponse = isGuilty 
+            ? "Outstanding work, Detective! Case closed. Justice has been served."
+            : "The real killer got away. We'll have to live with that outcome.";
+          
+          setMsgs(m => [...m, { speaker: 'Navarro', content: navarroResponse }]);
+          
+          // Show continue button and prepare end screen
+          setShowTrialContinue(true);
+          setGameEndType(isGuilty ? 'WIN' : 'LOSE');
+        }, 2000);
+      }, 3000);
+    }, 2000);
   };
 
   // Game explanation screen (intro phase)
@@ -4132,13 +4330,224 @@ if (actionType === 'INVESTIGATIVE') {
 
   // —— RENDER CHAT PHASE ——
   return (
-    <div className="game-container">
-      {/* Header */}
-      <div style={{ display:'flex', justifyContent:'space-between' }}>
-        <div className="timer">
-          <strong>Time:</strong> {fmt(currentClock())} | <strong>Remaining:</strong> {fmt(timeRemaining)}
+    <div className="game-container" style={{ display: 'flex', gap: '16px', maxWidth: '1200px' }}>
+      {/* Mini-Map */}
+      <div className="mini-map">
+        <div className="mini-map-header">
+          <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#ccc' }}>📍 CASE MAP</span>
         </div>
-        <div>
+        
+        <svg className="map-svg" viewBox="0 0 300 320">
+          {/* Background roads */}
+          <path className="map-road" d="M 0 80 L 300 80" />
+          <path className="map-road" d="M 0 160 L 300 160" />
+          <path className="map-road" d="M 0 240 L 300 240" />
+          <path className="map-road" d="M 80 0 L 80 320" />
+          <path className="map-road" d="M 160 0 L 160 320" />
+          <path className="map-road" d="M 240 0 L 240 320" />
+          
+          {/* Filler buildings with details for ambiance */}
+          <g>
+            <rect className="map-building filler" x="10" y="10" width="25" height="20" rx="2" />
+            <rect x="13" y="13" width="4" height="5" fill="#111" />
+            <rect x="19" y="13" width="4" height="5" fill="#111" />
+            <rect x="16" y="25" width="6" height="3" fill="#333" />
+          </g>
+          <g>
+            <rect className="map-building filler" x="45" y="15" width="20" height="30" rx="2" />
+            <rect x="48" y="18" width="3" height="4" fill="#111" />
+            <rect x="53" y="18" width="3" height="4" fill="#111" />
+            <rect x="58" y="18" width="3" height="4" fill="#111" />
+            <rect x="48" y="25" width="3" height="4" fill="#111" />
+            <rect x="53" y="25" width="3" height="4" fill="#111" />
+            <rect x="58" y="25" width="3" height="4" fill="#111" />
+            <rect x="52" y="40" width="6" height="3" fill="#333" />
+          </g>
+          <g>
+            <rect className="map-building filler" x="180" y="10" width="30" height="25" rx="2" />
+            <polygon points="180,10 195,0 210,10" fill="#333" />
+            <rect x="185" y="18" width="5" height="8" fill="#111" />
+            <rect x="195" y="18" width="5" height="8" fill="#111" />
+            <rect x="192" y="30" width="8" height="3" fill="#333" />
+          </g>
+          <g>
+            <rect className="map-building filler" x="250" y="20" width="25" height="35" rx="2" />
+            <rect x="253" y="25" width="4" height="6" fill="#111" />
+            <rect x="259" y="25" width="4" height="6" fill="#111" />
+            <rect x="265" y="25" width="4" height="6" fill="#111" />
+            <rect x="253" y="35" width="4" height="6" fill="#111" />
+            <rect x="259" y="35" width="4" height="6" fill="#111" />
+            <rect x="265" y="35" width="4" height="6" fill="#111" />
+            <rect x="260" y="50" width="8" height="3" fill="#333" />
+          </g>
+          <g>
+            <rect className="map-building filler" x="15" y="100" width="35" height="20" rx="2" />
+            <rect x="20" y="105" width="6" height="5" fill="#111" />
+            <rect x="28" y="105" width="6" height="5" fill="#111" />
+            <rect x="36" y="105" width="6" height="5" fill="#111" />
+            <rect x="25" y="115" width="10" height="3" fill="#333" />
+          </g>
+          <g>
+            <rect className="map-building filler" x="200" y="95" width="20" height="25" rx="2" />
+            <polygon points="200,95 210,85 220,95" fill="#333" />
+            <rect x="205" y="105" width="4" height="6" fill="#111" />
+            <rect x="211" y="105" width="4" height="6" fill="#111" />
+            <rect x="207" y="115" width="6" height="3" fill="#333" />
+          </g>
+          <g>
+            <rect className="map-building filler" x="270" y="110" width="25" height="30" rx="2" />
+            <rect x="274" y="115" width="4" height="6" fill="#111" />
+            <rect x="280" y="115" width="4" height="6" fill="#111" />
+            <rect x="286" y="115" width="4" height="6" fill="#111" />
+            <rect x="274" y="125" width="4" height="6" fill="#111" />
+            <rect x="280" y="125" width="4" height="6" fill="#111" />
+            <rect x="286" y="125" width="4" height="6" fill="#111" />
+            <rect x="279" y="135" width="8" height="3" fill="#333" />
+          </g>
+          <g>
+            <rect className="map-building filler" x="10" y="180" width="30" height="25" rx="2" />
+            <rect x="15" y="185" width="5" height="7" fill="#111" />
+            <rect x="22" y="185" width="5" height="7" fill="#111" />
+            <rect x="29" y="185" width="5" height="7" fill="#111" />
+            <rect x="20" y="200" width="8" height="3" fill="#333" />
+          </g>
+          <g>
+            <rect className="map-building filler" x="190" y="175" width="25" height="20" rx="2" />
+            <polygon points="190,175 202,165 215,175" fill="#333" />
+            <rect x="195" y="182" width="4" height="6" fill="#111" />
+            <rect x="201" y="182" width="4" height="6" fill="#111" />
+            <rect x="207" y="182" width="4" height="6" fill="#111" />
+            <rect x="199" y="190" width="8" height="3" fill="#333" />
+          </g>
+          <g>
+            <rect className="map-building filler" x="25" y="260" width="20" height="30" rx="2" />
+            <rect x="28" y="265" width="3" height="6" fill="#111" />
+            <rect x="33" y="265" width="3" height="6" fill="#111" />
+            <rect x="38" y="265" width="3" height="6" fill="#111" />
+            <rect x="28" y="275" width="3" height="6" fill="#111" />
+            <rect x="33" y="275" width="3" height="6" fill="#111" />
+            <rect x="38" y="275" width="3" height="6" fill="#111" />
+            <rect x="32" y="285" width="6" height="3" fill="#333" />
+          </g>
+          <g>
+            <rect className="map-building filler" x="170" y="270" width="35" height="25" rx="2" />
+            <rect x="175" y="275" width="6" height="7" fill="#111" />
+            <rect x="183" y="275" width="6" height="7" fill="#111" />
+            <rect x="191" y="275" width="6" height="7" fill="#111" />
+            <rect x="199" y="275" width="4" height="7" fill="#111" />
+            <rect x="182" y="290" width="12" height="3" fill="#333" />
+          </g>
+          <g>
+            <rect className="map-building filler" x="250" y="280" width="25" height="20" rx="2" />
+            <rect x="254" y="285" width="4" height="5" fill="#111" />
+            <rect x="260" y="285" width="4" height="5" fill="#111" />
+            <rect x="266" y="285" width="4" height="5" fill="#111" />
+            <rect x="259" y="295" width="8" height="3" fill="#333" />
+          </g>
+          
+          {/* Crime Scene (Apartment Complex) */}
+          <g>
+            <rect 
+              className={`map-building ${currentLocation === 'crime-scene' ? 'current-location' : ''}`}
+              x="85" y="50" width="40" height="25" rx="3"
+            />
+            <rect x="87" y="52" width="8" height="6" fill="#1f1f1f" />
+            <rect x="97" y="52" width="8" height="6" fill="#1f1f1f" />
+            <rect x="107" y="52" width="8" height="6" fill="#1f1f1f" />
+            <rect x="117" y="52" width="6" height="6" fill="#1f1f1f" />
+            <text className={`map-label ${currentLocation === 'crime-scene' ? 'current' : ''}`} x="105" y="45">Crime Scene</text>
+            {currentLocation === 'crime-scene' && <circle className="map-location-dot" cx="105" cy="62" r="3" />}
+          </g>
+          
+          {/* Marvin's Apartment (Next door) */}
+          <g>
+            <rect 
+              className={`map-building ${currentLocation === 'marvin-apartment' ? 'current-location' : ''}`}
+              x="130" y="50" width="25" height="25" rx="3"
+            />
+            <rect x="135" y="55" width="6" height="8" fill="#1f1f1f" />
+            <rect x="145" y="55" width="6" height="8" fill="#1f1f1f" />
+            <rect x="140" y="70" width="8" height="3" fill="#444" />
+            <text className={`map-label ${currentLocation === 'marvin-apartment' ? 'current' : ''}`} x="142" y="85">Marvin's</text>
+            {currentLocation === 'marvin-apartment' && <circle className="map-location-dot" cx="142" cy="62" r="3" />}
+          </g>
+          
+          {/* Detective HQ */}
+          <g>
+            <rect 
+              className={`map-building ${currentLocation === 'detective-hq' ? 'current-location' : ''}`}
+              x="165" y="125" width="50" height="30" rx="3"
+            />
+            <rect x="170" y="130" width="10" height="8" fill="#1f1f1f" />
+            <rect x="185" y="130" width="10" height="8" fill="#1f1f1f" />
+            <rect x="200" y="130" width="10" height="8" fill="#1f1f1f" />
+            <rect x="170" y="142" width="10" height="8" fill="#1f1f1f" />
+            <rect x="185" y="142" width="10" height="8" fill="#1f1f1f" />
+            <rect x="200" y="142" width="10" height="8" fill="#1f1f1f" />
+            <rect x="185" y="120" width="10" height="5" fill="#444" />
+            <text className={`map-label ${currentLocation === 'detective-hq' ? 'current' : ''}`} x="190" y="120">Detective HQ</text>
+            {currentLocation === 'detective-hq' && <circle className="map-location-dot" cx="190" cy="140" r="3" />}
+          </g>
+          
+          {/* Rachel's House - Only show if unlocked */}
+          {interviewsCompleted.includes('Rachel Kim') && (
+            <g>
+              <rect 
+                className={`map-building unlocked ${currentLocation === 'rachel-house' ? 'current-location' : ''}`}
+                x="50" y="200" width="30" height="25" rx="3"
+              />
+              <polygon points="50,200 65,185 80,200" fill="#444" />
+              <rect x="57" y="210" width="6" height="10" fill="#1f1f1f" />
+              <rect x="67" y="210" width="6" height="10" fill="#1f1f1f" />
+              <rect x="60" y="222" width="10" height="3" fill="#333" />
+              <text className={`map-label ${currentLocation === 'rachel-house' ? 'current' : ''}`} x="65" y="180">Rachel's</text>
+              {currentLocation === 'rachel-house' && <circle className="map-location-dot" cx="65" cy="212" r="3" />}
+            </g>
+          )}
+          
+          {/* Jordan's House - Only show if unlocked */}
+          {interviewsCompleted.includes('Jordan Valez') && (
+            <g>
+              <rect 
+                className={`map-building unlocked ${currentLocation === 'jordan-house' ? 'current-location' : ''}`}
+                x="200" y="200" width="35" height="30" rx="3"
+              />
+              <polygon points="200,200 217,180 235,200" fill="#444" />
+              <rect x="205" y="210" width="8" height="12" fill="#1f1f1f" />
+              <rect x="218" y="210" width="8" height="12" fill="#1f1f1f" />
+              <rect x="212" y="225" width="12" height="5" fill="#333" />
+              <text className={`map-label ${currentLocation === 'jordan-house' ? 'current' : ''}`} x="217" y="175">Jordan's</text>
+              {currentLocation === 'jordan-house' && <circle className="map-location-dot" cx="217" cy="215" r="3" />}
+            </g>
+          )}
+          
+          {/* Courtroom - Only show during trial */}
+          {trialPhase !== 'NONE' && (
+            <g>
+              <rect 
+                className={`map-building ${currentLocation === 'courtroom' ? 'current-location' : ''}`}
+                x="165" y="200" width="60" height="35" rx="5"
+              />
+              <rect x="170" y="205" width="12" height="15" fill="#1f1f1f" />
+              <rect x="186" y="205" width="12" height="15" fill="#1f1f1f" />
+              <rect x="202" y="205" width="12" height="15" fill="#1f1f1f" />
+              <rect x="180" y="225" width="30" height="8" fill="#444" />
+              <polygon points="185,200 195,190 205,200" fill="#666" />
+              <text className={`map-label ${currentLocation === 'courtroom' ? 'current' : ''}`} x="195" y="185">Courthouse</text>
+              {currentLocation === 'courtroom' && <circle className="map-location-dot" cx="195" cy="217" r="3" />}
+            </g>
+          )}
+        </svg>
+      </div>
+      
+      {/* Main Game Area */}
+      <div className="main-game-area" style={{ flex: 1 }}>
+        {/* Header */}
+        <div style={{ display:'flex', justifyContent:'space-between' }}>
+          <div className="timer">
+            <strong>Time:</strong> {fmt(currentClock())} | <strong>Remaining:</strong> {fmt(timeRemaining)}
+          </div>
+          <div>
           <button onClick={saveGame}>Save Game</button>
           <button onClick={handleAccuse}>Accuse</button>
           <button 
@@ -4247,9 +4656,10 @@ if (actionType === 'INVESTIGATIVE') {
           value={input}
           onChange={e=>setInput(e.target.value)}
           onKeyDown={e=>e.key==='Enter'&&sendMessage()}
-          placeholder="Ask Navarro or describe your next move…"
+          placeholder={trialInProgress ? "Trial in progress..." : "Ask Navarro or describe your next move…"}
+          disabled={trialInProgress}
         />
-        <button onClick={sendMessage}>Send</button>
+        <button onClick={sendMessage} disabled={trialInProgress}>Send</button>
         <button onClick={()=>setShowNotepad(true)}>🗒️ Notepad</button>
         <button onClick={()=>setShowEvidenceBoard(true)}>🧵 Theory Board</button>
         
@@ -4485,31 +4895,179 @@ if (actionType === 'INVESTIGATIVE') {
         }}>
 
           <h2 style={{ color: '#000' }}>🔍 Make Your Accusation</h2>
+          <p style={{ color: '#666', fontSize: '14px', marginBottom: '16px' }}>
+            Are you sure you want to make an accusation? If you're wrong, the killer will get away and you'll need to start over.
+          </p>
+          <p style={{ color: '#666', fontSize: '14px', marginBottom: '16px' }}>
+            Make sure you review what you know before accusing.
+          </p>
+          
           <select 
             value={selectedSuspect} 
             onChange={e=>setSelectedSuspect(e.target.value)}
-            style={{ color: '#000' }}
+            style={{ color: '#000', width: '100%', padding: '8px', marginBottom: '16px' }}
           >
             <option value="" disabled>Select Suspect…</option>
-            {caseData.suspects.map(s=> <option key={s} value={s}>{s}</option>)}
+            {interviewsCompleted
+              .filter(name => name !== 'Navarro' && name !== 'Marvin Lott')
+              .map(name => <option key={name} value={name}>{name}</option>)
+            }
           </select>
-          <button 
-            onClick={submitAccusation} 
-            disabled={!selectedSuspect}
+          
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button 
+              onClick={submitAccusation} 
+              disabled={!selectedSuspect}
+              style={{
+                padding: '8px 16px',
+                background: selectedSuspect ? '#cc2936' : '#666',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: selectedSuspect ? 'pointer' : 'not-allowed',
+                flex: 1
+              }}
+            >
+              Confirm Accusation
+            </button>
+            <button 
+              onClick={() => setShowAccuseModal(false)}
+              style={{
+                padding: '8px 16px',
+                background: '#666',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                flex: 1
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Trial Continue Button */}
+      {showTrialContinue && (
+        <div style={{
+          position: 'fixed',
+          bottom: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 1000
+        }}>
+          <button
+            onClick={() => {
+              setShowTrialContinue(false);
+              setShowGameEndScreen(true);
+            }}
             style={{
-              padding: '8px 16px',
-              background: '#333',
+              padding: '12px 24px',
+              background: '#cc2936',
               color: '#fff',
               border: 'none',
-              borderRadius: '4px',
+              borderRadius: '6px',
               cursor: 'pointer',
-              marginTop: '10px'
+              fontSize: '16px',
+              fontWeight: 'bold',
+              boxShadow: '0 4px 8px rgba(0,0,0,0.3)'
             }}
           >
-            Confirm
+            Click here to continue
           </button>
         </div>
       )}
+
+      {/* Game End Screen */}
+      {showGameEndScreen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.9)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 2000
+        }}>
+          <div style={{
+            background: '#fff',
+            padding: '32px',
+            borderRadius: '8px',
+            maxWidth: '500px',
+            width: '90%',
+            textAlign: 'center',
+            color: '#000'
+          }}>
+            {gameEndType === 'WIN' ? (
+              <>
+                <h2 style={{ color: '#2d5a2d', marginBottom: '16px' }}>🎉 Congratulations!</h2>
+                <p style={{ marginBottom: '16px' }}>Case solved! You successfully identified the killer.</p>
+                <p style={{ marginBottom: '24px', color: '#666' }}>
+                  Try different approaches - there are tons of ways to play this case! 
+                  Have some fun and see if you missed anything. Try different interview styles.
+                </p>
+                <p style={{ marginBottom: '24px', color: '#666' }}>
+                  A bad cop playthrough is fun too! 😉
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 style={{ color: '#cc2936', marginBottom: '16px' }}>😞 Case Closed</h2>
+                <p style={{ marginBottom: '16px' }}>The killer got away this time...</p>
+                <p style={{ marginBottom: '24px', color: '#666' }}>
+                  Don't worry - every great detective has cases that slip through their fingers. 
+                  Try a different approach and see what evidence you might have missed.
+                </p>
+              </>
+            )}
+            
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                onClick={() => {
+                  localStorage.removeItem('first48_save');
+                  window.location.reload();
+                }}
+                style={{
+                  padding: '12px 24px',
+                  background: '#cc2936',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '16px'
+                }}
+              >
+                Start New Case
+              </button>
+              
+              {hasSave && (
+                <button
+                  onClick={() => {
+                    // Future: implement save selection
+                    console.log('Resume from save (not implemented yet)');
+                  }}
+                  style={{
+                    padding: '12px 24px',
+                    background: '#666',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '16px'
+                  }}
+                >
+                  Resume from Save
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Debug Tools - only visible during development */}
       {process.env.NODE_ENV === 'development' && (
         <div style={{ 
@@ -4569,6 +5127,7 @@ if (actionType === 'INVESTIGATIVE') {
           onClose={() => setShowEvidenceBoard(false)}
         />
       )}
+      </div>
     </div>
   );
 }

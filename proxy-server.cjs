@@ -335,6 +335,22 @@ CASE KNOWLEDGE:
 
 ${gameState.evidence?.length > 0 ? `EVIDENCE SO FAR:\n- ${gameState.evidence.join('\n- ')}` : ''}
 ${gameState.leads?.length > 0 ? `LEADS SO FAR:\n- ${gameState.leads.join('\n- ')}` : ''}`;
+  } else if (character === "Judge") {
+    context += `
+TRIAL ROLE:
+- You are a presiding judge in a criminal trial
+- You are fair, impartial, and focused on the evidence presented
+- You weigh all testimony, evidence, and legal arguments before making a decision
+- You deliver verdicts based on the strength of the evidence and legal standards
+- You maintain courtroom decorum and ensure due process
+
+CASE CONTEXT:
+- This is the murder trial of Mia Rodriguez
+- The defendant has been accused of second-degree murder
+- Evidence and testimony have been presented over several hours
+- You must now deliver a verdict based on the evidence
+
+IMPORTANT: Your dialogue should be delivered in a formal, judicial manner. You are delivering a verdict in a criminal trial.`;
   }
 
   // Add conversation state-specific context
@@ -516,7 +532,7 @@ app.post('/chat', async (req, res) => {
   console.log('🔍 DEBUG: currentCharacterType =', gameState.currentCharacterType);
   
   // Build list of all possible characters
-  const allCharacters = ["Navarro", "Marvin Lott", "Rachel Kim", "Jordan Valez", "Dr. Sarah Chen"];
+  const allCharacters = ["Navarro", "Marvin Lott", "Rachel Kim", "Jordan Valez", "Dr. Sarah Chen", "Judge"];
   
   // Detect who should speak based on context
   const suggestedSpeaker = detectSpeakerFromContext(messages, gameState, allCharacters);
