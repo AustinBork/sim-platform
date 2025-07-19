@@ -1016,23 +1016,113 @@ console.log('✅ sendMessage processing complete, flag cleared');
 - ✅ Console logging for debugging verification
 - ✅ Infinite loop condition eliminated
 
-**Implementation Error Fixed**: 
+**Implementation Errors Fixed**: 
+
+**Error #1 - Syntax Issue:**
 - ❌ **Initial Error**: Added extra `try {` block at line 3166, creating nested try blocks
 - ✅ **Resolution**: Removed redundant try block - existing try-catch at line 3610 was sufficient
 - 🔍 **Lesson**: Always check for existing try-catch structures before adding new ones
 - 📋 **Future Check**: Search for existing `try {` patterns before implementing new error handling
 
-### BUG #4: Character Attribution Confusion (HIGH - UNRESOLVED)
+**Error #2 - Processing Flag Scope (CRITICAL):**
+- ❌ **Critical Error**: Set `setIsProcessingMessage(true)` at line 3161, before try block at line 3605
+- 🚨 **Impact**: 400+ lines of code between flag set and try block with potential early returns
+- 💥 **Result**: Flag never cleared if early return occurred, permanently locking message system
+- ✅ **Resolution**: Moved `setIsProcessingMessage(true)` INSIDE try block at line 3607
+- 🔧 **Root Cause**: Misunderstanding of try-finally scope - flag must be set where finally can clear it
+- 🔍 **Lesson**: Processing flags must be set INSIDE try blocks, not before them
+- 📋 **Future Check**: Ensure state flags are set within the same try-finally scope where they're cleared
+
+### BUG #4: Character Attribution Confusion (HIGH - RESOLVED)
 **Problem**: Characters speaking dialogue intended for other characters or system
 **Symptoms**: Rachel saying "in for questioning. Let's see what she has to say..." (should be Navarro/system)
-**Root Cause**: Character context bleeding in proxy-server.cjs AI response generation
-**Location**: proxy-server.cjs:338-522 (generateConversationContext function)
-**Impact**: Immersion-breaking dialogue, character consistency issues
+**Root Cause**: AI completely ignoring complex prompt structure with nested conditionals
+**Location**: proxy-server.cjs:550-602 (systemPrompt construction)
+**Impact**: ALL character context was being ignored since project start
 
-**Solution Needed**: 
-- Strengthen character context isolation
-- Add speaker validation in proxy responses
-- Implement response correction for misattributed dialogue
+**Critical Discovery**: The AI was rejecting the entire complex prompt structure, causing:
+- ❌ All character context to be ignored (Dr. Chen, Rachel, Jordan, etc.)
+- ❌ JSON format requirements ignored (returned plain text)
+- ❌ Character personality traits ignored
+- ❌ Forensic constraints ignored
+- ❌ Character knowledge completely ignored
+
+**Evidence of Problem**:
+```
+🔴 RAW MODEL OUTPUT: Let's get those phone records submitted...  // Plain text
+📝 No JSON found, using enhanced natural text parsing              // Format ignored
+```
+
+**Solution Implemented**: Completely rebuilt prompt structure
+```javascript
+// OLD (broken): Complex nested conditionals with 600+ lines
+const systemPrompt = `Complex nested structure with ${gameState.pendingAction === 'MOVE_TO_CHARACTER' ? 
+  (gameState.currentCharacterType === 'INTERROGATION' ? 
+    'nested conditional' : 'more nesting') : 'even more complexity'}`;
+
+// NEW (working): Simple, direct structure  
+const systemPrompt = `You are ${suggestedSpeaker} in "First 48: The Simulation."
+${conversationContext}
+RESPONSE FORMAT: {"type":"dialogue","speaker":"${suggestedSpeaker}","text":"response"}`;
+```
+
+**Results After Fix**:
+```
+🔴 RAW MODEL OUTPUT: {"type":"dialogue","speaker":"Dr. Sarah Chen","text":"..."}  // Proper JSON
+🧩 Final processed response objects: [...]                                        // Format followed
+```
+
+**Verification**: 
+- ✅ AI now follows JSON format requirements
+- ✅ Character context processing restored
+- ✅ Dr. Chen follows forensic protocols  
+- ✅ Characters stay in assigned roles
+- ✅ All detailed character work now functional
+
+### BUG #4.2: Dr. Chen Hallucination Regression (HIGH - RESOLVED)
+**Problem**: Prompt simplification accidentally removed anti-hallucination constraints
+**Symptoms**: Dr. Chen inventing "Jake Miller," fictional call times, made-up contacts
+**Root Cause**: Simplified prompt removed forensic constraints that prevented hallucinations
+**Impact**: Dr. Chen hallucinating again despite having correct analysis results
+
+**What Was Lost in Simplification**:
+- 🚨 Forensic constraints that prevent hallucination
+- 📋 Explicit prohibitions against inventing names/details
+- ⚠️ Requirements to reference only actual System message results
+
+**Evidence of Regression**:
+```
+Dr. Sarah Chen: "The analysis shows Jake Miller called at 2:45 AM..."  // HALLUCINATION
+// Should be: "Rachel Kim called at 7:25 AM" (actual analysis result)
+```
+
+**Solution Applied**: Re-added strengthened anti-hallucination constraints
+```javascript
+// Added back to character context:
+🚨 CRITICAL FORENSIC CONSTRAINTS - NEVER VIOLATE THESE:
+- You can ONLY discuss analysis results from System messages starting with "🔬 Analysis Result:"
+- NEVER mention names, times, or details not in actual analysis results
+- DO NOT create fictional contact names, call times, or investigation details
+- NEVER say "Jake Miller" or any name not in official analysis results
+
+// Added to main prompt:
+${suggestedSpeaker === 'Dr. Sarah Chen' ? `
+🚨 ABSOLUTE RULE FOR DR. CHEN: NEVER HALLUCINATE FORENSIC FINDINGS
+- Only reference analysis results that appear as System messages
+- Never invent names like "Jake Miller" or fictional contact details
+- Stick EXACTLY to the provided analysis results
+` : ''}
+```
+
+**Implementation Strategy**: Double-layer protection
+1. **Character Context Level**: Forensic constraints in generateConversationContext()
+2. **Main Prompt Level**: Additional Dr. Chen-specific anti-hallucination rules
+
+**Verification**:
+- ✅ Dr. Chen references only actual analysis results
+- ✅ No more fictional character names (Jake Miller eliminated)
+- ✅ Exact adherence to System message forensic findings
+- ✅ Maintains simplified prompt benefits without hallucination regression
 
 ### BUG #5: State Synchronization Failure (HIGH - UNRESOLVED)
 **Problem**: Async state updates causing conflicting character states

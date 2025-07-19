@@ -3157,9 +3157,6 @@ const sendMessage = async () => {
   
   if (!input.trim()) return;
   
-  // Set processing flag to prevent concurrent calls
-  setIsProcessingMessage(true);
-  
   const actionText = input; // Define actionText at the start
   setInput(''); // Clear input immediately to prevent race conditions
   
@@ -3606,6 +3603,9 @@ if (actionType === 'INVESTIGATIVE') {
   
   // This code replaces the try/catch block in the sendMessage function
   try {
+    // CRITICAL FIX: Set processing flag INSIDE try block to ensure finally clears it
+    setIsProcessingMessage(true);
+    
     const conversationContext = currentCharacter
     ? {
         character: currentCharacter,
@@ -3883,7 +3883,7 @@ if (actionType === 'INVESTIGATIVE') {
         if (speaker === 'Dr. Sarah Chen' && conversationState.currentCharacter === 'Dr. Sarah Chen') {
           // Check for phone records request and create evidence
           const inputLower = input.toLowerCase();
-          const phoneRecordsKeywords = ['phone records', 'phone company', 'phonecompany', 'phone data', 'call records', 'call data', 'phone logs', 'data from the phone'];
+          const phoneRecordsKeywords = ['phone records', 'phone company', 'phonecompany', 'phone data', 'call records', 'call data', 'phone logs', 'data from the phone', 'data elsewhere', 'data elswhere', 'phone is missing', 'need the data'];
           const phoneRecordsRegex = [
             /phone\s*company/i,
             /phone\s*records/i, 
@@ -3892,7 +3892,15 @@ if (actionType === 'INVESTIGATIVE') {
             /call\s*data/i,
             /data.*phone/i,
             /get.*phone.*data/i,
-            /contact.*phone.*company/i
+            /contact.*phone.*company/i,
+            /data.*elsewhere/i,
+            /data.*elswhere/i,
+            /phone.*missing.*data/i,
+            /missing.*phone.*data/i,
+            /need.*data.*phone/i,
+            /get.*data.*elsewhere/i,
+            /pull.*records/i,
+            /phone.*victim.*missing/i
           ];
           
           const isPhoneRecordsRequest = phoneRecordsKeywords.some(keyword => inputLower.includes(keyword)) ||

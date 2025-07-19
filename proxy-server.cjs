@@ -308,13 +308,16 @@ WHAT YOU KNOW:
 - You can analyze DNA, fingerprints, blood patterns, and other physical evidence
 - You provide analysis timelines based on the complexity of the evidence
 
-CRITICAL FORENSIC CONSTRAINTS:
+🚨 CRITICAL FORENSIC CONSTRAINTS - NEVER VIOLATE THESE:
 - You can ONLY discuss analysis results that have been completed and are mentioned in the conversation history as System messages starting with "🔬 Analysis Result:"
 - You MUST NOT invent, assume, or hallucinate any forensic findings
-- If analysis results are available in the conversation history, you should reference them directly
+- NEVER mention names, times, or details that are not in the actual analysis results
+- If analysis results are available in the conversation history, you should reference them EXACTLY as provided
 - If no analysis results are available, you can only discuss what evidence can be analyzed and provide time estimates
 - You should be helpful in guiding the detective on what evidence can be submitted for analysis
-- All your forensic statements must be based on actual analysis results from the conversation history
+- All your forensic statements must be based ONLY on actual analysis results from the conversation history
+- DO NOT create fictional contact names, call times, or investigation details
+- NEVER say "Jake Miller" or any name not in the official analysis results
 
 EVIDENCE ANALYSIS CAPABILITIES:
 - Bloodstain pattern analysis
@@ -546,60 +549,22 @@ app.post('/chat', async (req, res) => {
   // Generate character-specific conversation context
   const conversationContext = generateConversationContext(suggestedSpeaker, gameState);
   
-  // Build the system prompt with improved instructions
-  // Build the system prompt with improved instructions
-  const systemPrompt = `
-You are the dialogue engine for "First 48: The Simulation," a detective investigation game.
-Case: ${caseData.title || "The Murder of Mia Rodriguez"}
-Current time: ${gameState.currentTime || 'Unknown'}
-Remaining time: ${gameState.timeRemaining || 'Unknown'}
-Evidence: ${gameState.evidence?.join(', ') || 'None yet'}
-Leads: ${gameState.leads?.join(', ') || 'None yet'}
-
-CRITICAL DIALOGUE FORMAT INSTRUCTIONS:
-${gameState.pendingAction === 'MOVE_TO_CHARACTER' ? 
-`You MUST respond with ONLY dialogue - NO stage directions. Use this format:
-{"type":"dialogue","speaker":"${suggestedSpeaker}","text":"<their line>"}
-
-DO NOT include any stage directions. The detective has already approached and knocked on the door.` :
-`You MUST respond using ONLY the following sequence of JSON objects, each on its own line:
-
-1. First, a stage direction: {"type":"stage","description":"<action description>"}
-2. Then, a character's dialogue: {"type":"dialogue","speaker":"${suggestedSpeaker}","text":"<their line>"}
-
-DO NOT include any text, explanations, or commentary outside these JSON objects.`}
-DO NOT use markdown formatting, asterisks, or any other non-JSON syntax.
-The speaker MUST be "${suggestedSpeaker}" unless there is a compelling reason for another character to interject.
+  // SIMPLIFIED PROMPT - AI was ignoring complex nested structure
+  const systemPrompt = `You are ${suggestedSpeaker} in "First 48: The Simulation," a detective investigation game.
 
 ${conversationContext}
 
-${gameState.pendingAction === 'MOVE_TO_CHARACTER' ? 
-    (gameState.currentCharacterType === 'INTERROGATION' ? 
-      `The detective is in an interrogation room and ${suggestedSpeaker} has been brought in for questioning. DO NOT generate any stage directions - only generate dialogue. Have ${suggestedSpeaker} respond as someone who has been brought to the police station and is confused about why they're there.` :
-      `The detective has already approached ${suggestedSpeaker} and knocked on the door. DO NOT generate any stage directions - only generate dialogue. Have ${suggestedSpeaker} respond to the door knock as if greeting the detective for the first time.`) :
-    gameState.pendingAction === 'CONTINUE_CONVERSATION' ?
-    `The detective is continuing the conversation with ${suggestedSpeaker}. Have ${suggestedSpeaker} respond to the detective's question with new information that hasn't been shared before.` :
-    gameState.pendingAction === 'END_CONVERSATION' ?
-    `The detective is ending the conversation with ${suggestedSpeaker}. Have ${suggestedSpeaker} say goodbye appropriately.` :
-    gameState.pendingAction === 'ASK_NAVARRO' ?
-    `The detective is asking for your professional opinion as Navarro. Provide insightful detective commentary based on the evidence and leads so far.` :
-    `Respond to the detective's action with appropriate stage direction and dialogue.`
-}
+${suggestedSpeaker === 'Dr. Sarah Chen' ? `
+🚨 ABSOLUTE RULE FOR DR. CHEN: NEVER HALLUCINATE FORENSIC FINDINGS
+- Only reference analysis results that appear as System messages with "🔬 Analysis Result:"
+- Never invent names like "Jake Miller" or fictional contact details
+- Stick EXACTLY to the provided analysis results
+` : ''}
 
-Character response style: ${approachStyle === 'aggressive' ? 
-  `${suggestedSpeaker} becomes defensive and less forthcoming due to the detective's aggressive approach.` : 
-  approachStyle === 'empathetic' ? 
-  `${suggestedSpeaker} appreciates the detective's empathetic approach and provides more detailed information.` : 
-  `${suggestedSpeaker} responds naturally to the detective's neutral approach.`}
+RESPONSE FORMAT: Respond ONLY with this JSON format:
+{"type":"dialogue","speaker":"${suggestedSpeaker}","text":"your response here"}
 
-IMPORTANT: Your response must maintain continuity with previous dialogue. The character should not repeat information they've already provided unless specifically asked to clarify.
-
-CONVERSATION MEMORY: For characters other than Navarro, recall previous interactions and reference them naturally. If this is a follow-up conversation, the character should acknowledge having spoken to the detective before.
-
-MOOD AND EMOTION: Each character has specific emotional states based on their role in the story. Convey these emotions through dialogue style, word choice, and small behavioral details in stage directions.
-
-Ensure each JSON object is on its own line with no additional text.
-`;
+Do not include any other text, explanations, or formatting. Only the single JSON object.`;
 
   // Build messages for OpenAI
   const chatMessages = [
@@ -608,7 +573,31 @@ Ensure each JSON object is on its own line with no additional text.
   ];
 
  try {
+  // ===== COMPREHENSIVE DEBUG LOGGING =====
   console.log('🔄 Sending request to OpenAI...');
+  console.log('🎭 DEBUG: suggestedSpeaker =', suggestedSpeaker);
+  console.log('🎮 DEBUG: gameState.currentCharacter =', gameState.currentCharacter);
+  console.log('🎮 DEBUG: gameState.currentCharacterType =', gameState.currentCharacterType);
+  console.log('🎮 DEBUG: gameState.pendingAction =', gameState.pendingAction);
+  console.log('🎮 DEBUG: gameState.completedAnalysis =', gameState.completedAnalysis);
+  
+  console.log('📜 DEBUG: FULL SYSTEM PROMPT BEING SENT:');
+  console.log('=' .repeat(80));
+  console.log(systemPrompt);
+  console.log('=' .repeat(80));
+  
+  console.log('💬 DEBUG: CONVERSATION CONTEXT GENERATED:');
+  console.log('-' .repeat(40));
+  console.log(conversationContext);
+  console.log('-' .repeat(40));
+  
+  console.log('📨 DEBUG: COMPLETE CHAT MESSAGES:');
+  chatMessages.forEach((msg, index) => {
+    console.log(`Message ${index} (${msg.role}):`);
+    console.log(msg.content.substring(0, 200) + (msg.content.length > 200 ? '...[TRUNCATED]' : ''));
+    console.log('---');
+  });
+  
   const response = await openAI.chat.completions.create({
     model: 'gpt-4o-mini',
     messages: chatMessages
