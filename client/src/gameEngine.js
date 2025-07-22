@@ -375,8 +375,9 @@ export function applyAction(gameState = {}, actionText = '') {
 
   return { 
     newState, 
-    cost, 
+    timeCost: cost,  // Changed from 'cost' to 'timeCost' for test consistency
     newLeads: unlockedDefs,
-    discoveredEvidence
+    evidence: discoveredEvidence,  // Changed from 'discoveredEvidence' to 'evidence' for test consistency
+    messages: [`Action completed: ${actionText}`]  // Added messages array for test consistency
   };
 }

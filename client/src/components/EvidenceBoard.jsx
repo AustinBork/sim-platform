@@ -253,18 +253,19 @@ const EvidenceBoard = ({ evidence, leads, suspects, theoryBoardState, onStateCha
             <span>👥 Suspects: {suspects.length}</span>
             <span>🧵 Connections: {connections.length}</span>
           </div>
-          <div className="board-controls">
-            <button onClick={decreaseCardSize}>📦 Smaller Cards</button>
-            <button onClick={resetCardSize}>Reset Size</button>
-            <button onClick={increaseCardSize}>🔍 Larger Cards</button>
+          <div className="board-controls" data-testid="scale-controls">
+            <button data-testid="zoom-out" onClick={decreaseCardSize}>📦 Smaller Cards</button>
+            <button data-testid="reset-board" onClick={resetCardSize}>Reset Size</button>
+            <button data-testid="zoom-in" onClick={increaseCardSize}>🔍 Larger Cards</button>
             <button onClick={() => setConnections([])}>Clear Connections</button>
-            <button onClick={onClose}>Close</button>
+            <button data-testid="close-evidence-board" onClick={onClose}>Close</button>
           </div>
         </div>
         
         <div 
           ref={boardRef}
           className="evidence-board"
+          data-testid="evidence-board"
         >
           <div 
             ref={workspaceRef}
@@ -279,6 +280,27 @@ const EvidenceBoard = ({ evidence, leads, suspects, theoryBoardState, onStateCha
           >
           {/* Cork board background */}
           <div className="cork-board-background" />
+          
+          {/* Connection mode indicator */}
+          {connectingFrom && (
+            <div className="connection-mode-indicator" data-testid="connection-mode-indicator">
+              Connecting from: {connectingFrom.title}
+            </div>
+          )}
+          
+          {/* Empty state message */}
+          {evidence.length === 0 && leads.length === 0 && suspects.length === 0 && (
+            <div className="empty-state" style={{ 
+              position: 'absolute', 
+              top: '50%', 
+              left: '50%', 
+              transform: 'translate(-50%, -50%)', 
+              color: '#666',
+              fontSize: '18px'
+            }}>
+              No evidence collected yet. Start investigating!
+            </div>
+          )}
           
           {/* SVG layer for connections */}
           <svg 
@@ -336,6 +358,7 @@ const EvidenceBoard = ({ evidence, leads, suspects, theoryBoardState, onStateCha
             <div
               key={card.id}
               className={`evidence-card ${card.type} ${draggedCard?.id === card.id ? 'dragging' : ''}`}
+              data-testid={`card-${card.id}`}
               style={{
                 left: card.position.x,
                 top: card.position.y,
@@ -349,6 +372,34 @@ const EvidenceBoard = ({ evidence, leads, suspects, theoryBoardState, onStateCha
               <div className="card-header">
                 <span className="card-type">{card.type}</span>
                 <span className="card-title">{card.title}</span>
+                <button 
+                  data-testid={`connect-button-${card.id}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (connectingFrom === card) {
+                      setConnectingFrom(null);
+                    } else if (connectingFrom) {
+                      // Create connection
+                      handleCardClick(card);
+                    } else {
+                      setConnectingFrom(card);
+                    }
+                  }}
+                  style={{ 
+                    position: 'absolute', 
+                    top: '2px', 
+                    right: '2px',
+                    background: connectingFrom === card ? '#ff4444' : '#4caf50',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: '16px',
+                    height: '16px',
+                    fontSize: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  🔗
+                </button>
               </div>
               <div className="card-content">
                 {card.content}
