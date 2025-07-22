@@ -448,6 +448,7 @@ const currentClock = () => START_OF_DAY + timeElapsed;
   const [showAccuseModal, setShowAccuseModal] = useState(false);
   const [selectedSuspect, setSelectedSuspect] = useState('');
   const [isProcessingMessage, setIsProcessingMessage] = useState(false); // Prevent infinite loops
+  const [isStateTransitioning, setIsStateTransitioning] = useState(false); // Prevent race conditions
   const [hasSave, setHasSave]                 = useState(false);
   const [savedState, setSavedState]           = useState(null);
   const scrollRef                             = useRef(null);
@@ -492,6 +493,7 @@ const currentClock = () => START_OF_DAY + timeElapsed;
 
   // Location tracking for mini-map
   const [currentLocation, setCurrentLocation] = useState('crime-scene'); // Default to crime scene
+
 
   // Time skip controls
   const [showCigarMenu, setShowCigarMenu] = useState(false);
@@ -1027,6 +1029,9 @@ const isEndingConversation = useCallback((text, currentState) => {
             typewriterSounds.playCarriageReturn();
           }
           setCurrentlyTyping(null);
+          
+          // Typewriter completed
+          
           // Auto-scroll after message is complete
           setTimeout(() => {
             scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1174,7 +1179,7 @@ const isEndingConversation = useCallback((text, currentState) => {
     }
     
     if (leads.includes('blood-analysis') && !actionsPerformed.some(a => a.includes('blood'))) {
-      defaultThoughts.push("The blood spatter pattern looks unusual. Should have the lab analyze it.");
+      defaultThoughts.push("The blood spatter pattern looks unusual. Should have the lab analyze it. (Contact Dr. Chen to submit evidence for analysis)");
     }
     
     if (leads.includes('knife-analysis') && !actionsPerformed.some(a => a.includes('knife'))) {
@@ -1183,6 +1188,14 @@ const isEndingConversation = useCallback((text, currentState) => {
     
     if (leads.includes('phone-records') && !actionsPerformed.some(a => a.includes('phone records') || a.includes('chen'))) {
       defaultThoughts.push("The victim's phone is missing. I should contact Dr. Chen to pull phone records.");
+    }
+    
+    if (leads.includes('apartment-search') && !actionsPerformed.some(a => a.includes('search') && (a.includes('apartment') || a.includes('place') || a.includes('room') || a.includes('thorough')))) {
+      defaultThoughts.push("I should search the apartment more thoroughly for additional evidence the killer might have left behind.");
+    }
+    
+    if (leads.includes('forensic-analysis') && !actionsPerformed.some(a => a.includes('forensic') || a.includes('dna') || (a.includes('chen') && a.includes('evidence')))) {
+      defaultThoughts.push("I should have Dr. Chen analyze this evidence for DNA, fingerprints, and trace evidence.");
     }
     
     if (leads.includes('interview-rachel') && !interviewsCompleted.includes('Rachel Kim')) {
@@ -1268,7 +1281,7 @@ const isEndingConversation = useCallback((text, currentState) => {
         const jordanInfo = extractedInformation['Jordan Valez'];
         updatedNotes.push(`Jordan Valez (Ex-Boyfriend): ${jordanInfo.join(', ')}`);
       }
-      else if (leadId.includes('scene-') || leadId.includes('analysis') || leadId.includes('records')) {
+      else if (leadId.includes('scene-') || leadId.includes('analysis') || leadId.includes('records') || leadId.includes('search')) {
         // For non-interview leads, show the generic description
         console.log('📝 Adding to notes:', leadId, leadDef.description);
         updatedNotes.push(leadDef.description);
@@ -1897,6 +1910,27 @@ function detectCharacterMention(text, currentState, gameState) {
   const lowerText = text.toLowerCase();
   console.log('🔍 Detecting character in:', lowerText);
 
+  // SURGICAL FIX: Prevent unwanted transitions when asking CURRENT character ABOUT another character
+  // This preserves interrogation flow when user asks "what do you know about rachel?" to Jordan
+  if (currentState.currentCharacter && currentState.conversationPhase !== 'NONE') {
+    const askingAboutPatterns = [
+      /what.*(do you know|think|remember|recall).*(about|of)/i,
+      /tell me about/i,
+      /what about/i,
+      /how.*feel.*about/i,
+      /.*opinion.*(about|of)/i,
+      /what.*think.*about/i,
+      /know anything about/i,
+      /heard.*about/i
+    ];
+    
+    // If user is asking current character ABOUT someone else, don't transition
+    if (askingAboutPatterns.some(pattern => pattern.test(text))) {
+      console.log(`🔍 User asking ${currentState.currentCharacter} ABOUT someone - preventing character transition`);
+      return null;
+    }
+  }
+
   // Comprehensive character alias mapping with weighted scores
   const characterAliases = {
     'Marvin Lott': {
@@ -2185,7 +2219,7 @@ function isGeneralInvestigativeAction(text) {
   
   // Investigation action keywords (lab-specific terms removed - those route to Dr. Sarah Chen)
   const investigationKeywords = [
-    'examine', 'check', 'look at', 'search', 'investigate',
+    'examine', 'check', 'look at', 'search', 'seach', 'serch', 'investigate',
     'collect', 'gather', 'inspect'
   ];
   
@@ -2821,35 +2855,33 @@ function isGeneralInvestigativeAction(text) {
         
         // Add single consolidated evidence discovery message
         if (evidenceDescriptions.length > 0) {
-          setMsgs(m => [
-            ...m, 
-            { 
-              speaker: 'System', 
-              content: `🔍 Evidence discovered:\n${evidenceDescriptions.join('\n')}`
-            }
-          ]);
+          setMsgs(m => [...m, { 
+            speaker: 'System', 
+            content: `🔍 Evidence discovered:\n${evidenceDescriptions.join('\n')}`
+          }]);
         }
         
-        // Add single consolidated Navarro commentary message
+        // Add single consolidated Navarro commentary message with small delay
         if (commentaries.length > 0) {
-          setMsgs(m => [
-            ...m,
-            {
+          setTimeout(() => {
+            setMsgs(m => [...m, {
               speaker: 'Navarro',
               content: commentaries.join(' ')
-            }
-          ]);
+            }]);
+          }, 1500); // Small delay to let first message start typing
         }
         
         // Add scene ending transition after evidence discovery
         setTimeout(() => {
           console.log('🔚 Adding scene ending transition after evidence discovery');
           
-          // Add system message indicating scene completion
-          setMsgs(m => [...m, { 
-            speaker: 'System', 
-            content: '*You finish documenting the crime scene thoroughly, capturing all visible evidence.*'
-          }]);
+          // Add system message indicating scene completion with delay
+          setTimeout(() => {
+            setMsgs(m => [...m, { 
+              speaker: 'System', 
+              content: '*You finish documenting the crime scene thoroughly, capturing all visible evidence.*'
+            }]);
+          }, 3000); // Wait for previous messages
           
           // Check if photography was just completed to suggest apartment search
           const photographyEvidence = ['stab-wound', 'no-forced-entry', 'partial-cleaning', 'locked-door', 'bloodstain'];
@@ -2864,26 +2896,35 @@ function isGeneralInvestigativeAction(text) {
             if (apartmentSearchLead && !leads.includes('apartment-search')) {
               setLeads(prev => [...prev, 'apartment-search']);
               
-              // Add lead notification
-              setMsgs(m => [...m, { 
-                speaker: 'System', 
-                content: `🕵️ New lead unlocked: ${apartmentSearchLead.description}`
-              }]);
-              setMsgs(m => [...m, { 
-                speaker: 'Navarro', 
-                content: apartmentSearchLead.narrative
-              }]);
+              // Add lead notification with delays
+              setTimeout(() => {
+                setMsgs(m => [...m, { 
+                  speaker: 'System', 
+                  content: `🕵️ New lead unlocked: ${apartmentSearchLead.description}`
+                }]);
+              }, 4500);
+              
+              setTimeout(() => {
+                setMsgs(m => [...m, { 
+                  speaker: 'Navarro', 
+                  content: apartmentSearchLead.narrative
+                }]);
+              }, 6000);
             }
             
-            setMsgs(m => [...m, { 
-              speaker: 'Navarro', 
-              content: 'Good work. We\'ve got a solid foundation now. The photos show the basics, but we might have missed something. A thorough search of the apartment could turn up evidence the killer left behind.'
-            }]);
+            setTimeout(() => {
+              setMsgs(m => [...m, { 
+                speaker: 'Navarro', 
+                content: 'Good work. We\'ve got a solid foundation now. The photos show the basics, but we might have missed something. A thorough search of the apartment could turn up evidence the killer left behind.'
+              }]);
+            }, 7500);
           } else {
-            setMsgs(m => [...m, { 
-              speaker: 'Navarro', 
-              content: 'Good work. We\'ve got a solid foundation now. What\'s our next move, Detective?'
-            }]);
+            setTimeout(() => {
+              setMsgs(m => [...m, { 
+                speaker: 'Navarro', 
+                content: 'Good work. We\'ve got a solid foundation now. What\'s our next move, Detective?'
+              }]);
+            }, 4500);
           }
           
           // Reset conversation state to indicate scene completion
@@ -3065,6 +3106,33 @@ function isGeneralInvestigativeAction(text) {
 
   // —— STATE MANAGEMENT UTILITIES ——
   
+  // SURGICAL FIX: Atomic state transition to prevent race conditions
+  const setConversationStateAtomic = async (updateFunction, debugLabel = 'state update') => {
+    // Wait for any ongoing transitions to complete
+    while (isStateTransitioning) {
+      console.log(`⏳ Waiting for state transition to complete before ${debugLabel}`);
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    
+    // Lock state transitions
+    setIsStateTransitioning(true);
+    console.log(`🔒 Locking state for ${debugLabel}`);
+    
+    try {
+      // Perform the state update
+      setConversationStateWithValidation(updateFunction);
+      
+      // Small delay to ensure state propagation
+      await new Promise(resolve => setTimeout(resolve, 5));
+      
+      console.log(`✅ State transition completed: ${debugLabel}`);
+    } finally {
+      // Always unlock, even if update fails
+      setIsStateTransitioning(false);
+      console.log(`🔓 Unlocking state after ${debugLabel}`);
+    }
+  };
+  
   // Enhanced character memory persistence
   const preserveCharacterMemory = (characterName, interactionData, setState) => {
     if (!characterName) return;
@@ -3126,15 +3194,20 @@ function isGeneralInvestigativeAction(text) {
   
   // Classify action type for proper routing
   const classifyAction = (input, mentionedCharacter) => {
-    // Service characters should never be investigative
-    if (conversationState.currentCharacter === 'Dr. Sarah Chen' || 
-        conversationState.currentCharacter === 'Navarro') {
+    // CONTEXT-AWARE: When talking TO Dr. Chen ABOUT evidence, stay in conversation
+    if (conversationState.currentCharacter === 'Dr. Sarah Chen') {
       return 'CHARACTER_INTERACTION';
     }
     
+    // Check for investigative actions (photos, search, evidence collection)
     const isInvestigativeAction = isGeneralInvestigativeAction(input);
-    
     if (isInvestigativeAction) return 'INVESTIGATIVE';
+    
+    // Service characters default to interaction for non-investigative actions
+    if (conversationState.currentCharacter === 'Navarro') {
+      return 'CHARACTER_INTERACTION';
+    }
+    
     if (mentionedCharacter) return 'CHARACTER_INTERACTION';
     if (input.toLowerCase().includes('navarro') && !mentionedCharacter) return 'ASK_NAVARRO';
     return 'GENERAL';
@@ -3313,12 +3386,12 @@ const sendMessage = async () => {
       }]);
       
       // Clean reset of conversation state for assistive characters
-      setConversationStateWithValidation(prev => ({
+      await setConversationStateAtomic(prev => ({
         ...prev,
         currentCharacter: null,
         conversationPhase: 'NONE',
         pendingAction: null
-      }));
+      }), 'assistive character transition reset');
       
       // Add Navarro's affirmation for the transition
       const affirmation = getNavarroAffirmation(actionText);
@@ -3582,19 +3655,19 @@ if (actionType === 'INVESTIGATIVE') {
 } else if (currentCharacter && !isEnding) {
   // Continuing conversation with current character
   console.log(`🔧 Continuing conversation with ${currentCharacter}`);
-  setConversationStateWithValidation(prev => ({
+  await setConversationStateAtomic(prev => ({
     ...prev,
     pendingAction: 'CONTINUE_CONVERSATION',
     conversationPhase: 'QUESTIONING'
-  }));
+  }), 'continue conversation with current character');
 } else if (actionType === 'ASK_NAVARRO') {
   console.log('🤝 Processing Navarro consultation');
-  setConversationStateWithValidation(prev => ({
+  await setConversationStateAtomic(prev => ({
     ...prev,
     pendingAction: 'ASK_NAVARRO',
     currentCharacter: 'Navarro',
     conversationPhase: 'NONE'
-  }));
+  }), 'Navarro consultation transition');
 } else if (actionType === 'GENERAL') {
   console.log('💬 Processing general conversation/continuation');
   // For general conversation, preserve current state
@@ -3680,10 +3753,12 @@ if (actionType === 'INVESTIGATIVE') {
             
             // Add Navarro's narrative if present
             if (leadDef.narrative) {
-              setMsgs(m => [...m, {
-                speaker: 'Navarro',
-                content: leadDef.narrative
-              }]);
+              setTimeout(() => {
+                setMsgs(m => [...m, {
+                  speaker: 'Navarro',
+                  content: leadDef.narrative
+                }]);
+              }, 1000);
             }
           });
         }
@@ -3861,10 +3936,12 @@ if (actionType === 'INVESTIGATIVE') {
                         speaker: 'System', 
                         content: `🕵️ New lead unlocked: Interview Jordan Valez, the ex-boyfriend.`
                       }]);
-                      setMsgs(m => [...m, { 
-                        speaker: 'Navarro', 
-                        content: `Rachel brought up Jordan. We should definitely question him about his relationship with Mia and verify his alibi.`
-                      }]);
+                      setTimeout(() => {
+                        setMsgs(m => [...m, { 
+                          speaker: 'Navarro', 
+                          content: `Rachel brought up Jordan. We should definitely question him about his relationship with Mia and verify his alibi.`
+                        }]);
+                      }, 1000);
                     }, 1000);
                   }
                 }
@@ -4732,6 +4809,9 @@ if (actionType === 'INVESTIGATIVE') {
               </div>
             )}
           </div>
+          <small style={{ color: '#888', fontSize: '12px', textAlign: 'center', display: 'block', marginTop: '5px' }}>
+            Skip time
+          </small>
         </div>
       </div>
 

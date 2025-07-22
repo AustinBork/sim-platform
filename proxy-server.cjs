@@ -1,5 +1,7 @@
 // proxy-server.cjs
 
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const { OpenAI } = require('openai');
@@ -251,7 +253,27 @@ PERSONALITY IN INTERROGATION:
 - Deflect suspicion toward Jordan whenever possible (mention his anger, the restraining order)
 - If confronted with evidence, provide reasonable explanations (bracelet: "I lost it a while ago, I spent lots of time at Mia's")
 
-CRITICAL: You are NOT part of the investigation team. You are the suspect being questioned.`;
+CRITICAL: You are NOT part of the investigation team. You are the suspect being questioned.
+
+🚨 ROLE ENFORCEMENT - NEVER VIOLATE THESE:
+- NEVER respond as an investigative team member when you are a suspect
+- NEVER provide case analysis or investigation directions
+- NEVER say things like "Let's see what she has to say" or "This could be critical"
+- NEVER give detective-style commentary about the case
+- NEVER suggest investigative strategies or next steps
+- ALWAYS respond as a confused, nervous suspect who doesn't know why they're being questioned
+- ALWAYS stay in character as Rachel Kim, the suspect, NOT as a detective or investigator
+
+CORRECT RESPONSE EXAMPLES:
+✅ "I don't understand why you're asking me this"
+✅ "I just want to help find out what happened to Mia"
+✅ "I don't know anything about that"
+
+WRONG RESPONSE EXAMPLES (NEVER SAY THESE):
+❌ "Let's see what she has to say"
+❌ "This could be critical in understanding the context"
+❌ "We should investigate that further"
+❌ "That's an interesting lead to pursue"`;
     } else {
       // Regular interview context (neighborhood/crime scene)
       context += `
@@ -308,7 +330,7 @@ WHAT YOU KNOW:
 - You can analyze DNA, fingerprints, blood patterns, and other physical evidence
 - You provide analysis timelines based on the complexity of the evidence
 
-🚨 CRITICAL FORENSIC CONSTRAINTS - NEVER VIOLATE THESE:
+🚨 EMERGENCY TEMPORAL CONSISTENCY CONSTRAINTS - ABSOLUTE RULES:
 - You can ONLY discuss analysis results that have been completed and are mentioned in the conversation history as System messages starting with "🔬 Analysis Result:"
 - You MUST NOT invent, assume, or hallucinate any forensic findings
 - NEVER mention names, times, or details that are not in the actual analysis results
@@ -318,6 +340,21 @@ WHAT YOU KNOW:
 - All your forensic statements must be based ONLY on actual analysis results from the conversation history
 - DO NOT create fictional contact names, call times, or investigation details
 - NEVER say "Jake Miller" or any name not in the official analysis results
+
+🚨 FICTIONAL CHARACTER PREVENTION - NEVER MENTION:
+- "Brian Matthews" - THIS CHARACTER DOES NOT EXIST
+- Any characters not in official game: Only mention Mia Rodriguez, Rachel Kim, Jordan Valez, Marvin Lott
+- Paint analysis or construction site references
+- DNA matches without actual completed analysis data
+
+🚨 TEMPORAL VALIDATION RULE - CRITICAL TIMING ENFORCEMENT:
+- If completedAnalysis.length === 0: Analysis is NOT complete yet
+- NEVER claim to have results for incomplete analysis regardless of user request
+- MUST check: Is analysis actually ready based on completion time?
+- When analysis NOT ready: "The [evidence] analysis is still in progress. Expected completion: [completion_time]"
+- When analysis IS ready: Reference actual System message results only
+- NEVER fabricate results when analysis time hasn't been reached
+- EXAMPLE: If currentTime is 11:40 and bracelet completion is 14:40 → "The bracelet analysis isn't complete yet - it should be ready at 14:40"
 
 EVIDENCE ANALYSIS CAPABILITIES:
 - Bloodstain pattern analysis
@@ -356,8 +393,32 @@ CASE CONTEXT:
 IMPORTANT: Your dialogue should be delivered in a formal, judicial manner. You are delivering a verdict in a criminal trial.`;
   }
 
+  // Add comprehensive conversation history from game state
+  if (gameState.conversation && gameState.conversation.characterCount > 0) {
+    context += `
+
+CONVERSATION HISTORY WITH DETECTIVE:
+- Previous conversations: ${gameState.conversation.characterCount}
+- Current conversation topics: ${gameState.conversation.topics || 0}
+${gameState.conversation.topicsDiscussed && gameState.conversation.topicsDiscussed.length > 0 ? 
+  `- Topics already discussed: ${gameState.conversation.topicsDiscussed.join(", ")}` : 
+  '- This is your first conversation topic'
+}
+${gameState.extractedInformation && gameState.extractedInformation.length > 0 ?
+  `- Information you've shared: ${gameState.extractedInformation.slice(-3).join(", ")}` :
+  '- You haven\'t shared significant information yet'
+}
+${gameState.evidence && gameState.evidence.length > 0 ?
+  `- Evidence in case: ${gameState.evidence.join(", ")}` :
+  '- No evidence has been discovered yet'
+}
+
+IMPORTANT: Use this history to maintain consistency. Don't repeat information you've already shared.`;
+  }
+
   // Add conversation state-specific context
   if (gameState.conversationPhase === 'GREETING' || 
+      gameState.conversationPhase === 'NONE' ||
       (!gameState.conversation || gameState.conversation.state === 'INITIAL')) {
     // First time meeting
     if (character === "Rachel Kim" && gameState.currentCharacterType === 'INTERROGATION') {
@@ -546,30 +607,37 @@ app.post('/chat', async (req, res) => {
   const approachStyle = analyzeApproachStyle(lastMessage);
   console.log(`👤 Player approach style: ${approachStyle}`);
   
-  // Generate character-specific conversation context
-  const conversationContext = generateConversationContext(suggestedSpeaker, gameState);
-  
-  // SIMPLIFIED PROMPT - AI was ignoring complex nested structure
-  const systemPrompt = `You are ${suggestedSpeaker} in "First 48: The Simulation," a detective investigation game.
+  // HYBRID APPROACH - Minimal prompt with interrogation-specific constraints
+  const systemPrompt = `You are ${suggestedSpeaker} in "First 48: The Simulation."
 
-${conversationContext}
-
-${suggestedSpeaker === 'Dr. Sarah Chen' ? `
-🚨 ABSOLUTE RULE FOR DR. CHEN: NEVER HALLUCINATE FORENSIC FINDINGS
-- Only reference analysis results that appear as System messages with "🔬 Analysis Result:"
-- Never invent names like "Jake Miller" or fictional contact details
-- Stick EXACTLY to the provided analysis results
-` : ''}
+${suggestedSpeaker === "Rachel Kim" && gameState.currentCharacterType === 'INTERROGATION' ? 
+`CRITICAL INTERROGATION CONSTRAINTS:
+- You are confused about why you're here and what this is about
+- DO NOT mention case details, victim names, or evidence unless directly asked
+- You have NO knowledge of any crime or investigation
+- Respond only with general confusion: "Hi, I don't know what's going on but I can tell something's wrong"` : ''}
 
 RESPONSE FORMAT: Respond ONLY with this JSON format:
 {"type":"dialogue","speaker":"${suggestedSpeaker}","text":"your response here"}
 
 Do not include any other text, explanations, or formatting. Only the single JSON object.`;
 
-  // Build messages for OpenAI
+  // HYBRID MESSAGE FILTERING - Eliminate detective commentary pollution while preserving character context
+  const filteredMessages = messages.filter((msg, index) => {
+    // Always keep the last 3 messages (immediate context)
+    if (index >= messages.length - 3) return true;
+    
+    // Keep character-specific dialogue (not system/detective commentary)
+    if (msg.content && msg.content.includes(suggestedSpeaker)) return true;
+    
+    return false;
+  }).slice(-10); // Cap at 10 total messages maximum
+  
+  console.log(`🔥 MESSAGE FILTERING: Original ${messages.length} → Filtered ${filteredMessages.length}`);
+  
   const chatMessages = [
     { role: 'system', content: systemPrompt },
-    ...messages.map(m => ({ role: m.role, content: m.content }))
+    ...filteredMessages.map(m => ({ role: m.role, content: m.content }))
   ];
 
  try {
@@ -585,11 +653,6 @@ Do not include any other text, explanations, or formatting. Only the single JSON
   console.log('=' .repeat(80));
   console.log(systemPrompt);
   console.log('=' .repeat(80));
-  
-  console.log('💬 DEBUG: CONVERSATION CONTEXT GENERATED:');
-  console.log('-' .repeat(40));
-  console.log(conversationContext);
-  console.log('-' .repeat(40));
   
   console.log('📨 DEBUG: COMPLETE CHAT MESSAGES:');
   chatMessages.forEach((msg, index) => {
@@ -608,6 +671,68 @@ Do not include any other text, explanations, or formatting. Only the single JSON
   console.log('🔴 OUTPUT FIRST 100 CHARS:', text.substring(0, 100));
   console.log('🔴 OUTPUT LAST 100 CHARS:', text.substring(Math.max(0, text.length - 100)));
   
+  // 🐛 CHARACTER ATTRIBUTION DEBUG
+  console.log('🐛 CHARACTER DEBUG: Expected speaker:', suggestedSpeaker);
+  if (text.includes('"speaker"')) {
+    const speakerMatch = text.match(/"speaker":\s*"([^"]+)"/);
+    if (speakerMatch) {
+      console.log('🐛 CHARACTER DEBUG: AI returned speaker:', speakerMatch[1]);
+      if (speakerMatch[1] !== suggestedSpeaker) {
+        console.log('🚨 CHARACTER ATTRIBUTION BUG DETECTED!');
+        console.log('🚨 Expected:', suggestedSpeaker, 'Got:', speakerMatch[1]);
+      }
+    }
+  }
+  
+  // SURGICAL FIX: JSON validation and sanitization to prevent malformed responses
+  // This prevents crashes from malformed JSON like "","text":"content"}"
+  const sanitizeJSONResponse = (rawText) => {
+    let sanitized = rawText.trim();
+    
+    // Fix common malformations
+    // Remove leading/trailing commas that break JSON structure
+    sanitized = sanitized.replace(/^,+|,+$/g, '');
+    
+    // Fix duplicate quote patterns like "",\"text\"
+    sanitized = sanitized.replace(/^"+,?/g, '');
+    
+    // Ensure proper JSON object wrapping if missing opening brace
+    if (sanitized.startsWith('"text":') || sanitized.startsWith('"type":')) {
+      sanitized = '{' + sanitized;
+    }
+    
+    // Fix incomplete JSON objects missing final brace
+    if (sanitized.startsWith('{') && !sanitized.endsWith('}')) {
+      sanitized = sanitized + '}';
+    }
+    
+    return sanitized;
+  };
+  
+  // Validate JSON structure before parsing
+  const validateDialogueJSON = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') return false;
+    
+    // Must have type field
+    if (!parsed.type) return false;
+    
+    // Dialogue type must have speaker and text
+    if (parsed.type === 'dialogue') {
+      return typeof parsed.speaker === 'string' && 
+             typeof parsed.text === 'string' && 
+             parsed.speaker.trim().length > 0 && 
+             parsed.text.trim().length > 0;
+    }
+    
+    // Stage type must have description
+    if (parsed.type === 'stage') {
+      return typeof parsed.description === 'string' && 
+             parsed.description.trim().length > 0;
+    }
+    
+    return false;
+  };
+
   // IMPROVED: Enhanced parsing for both JSON and text formats
   let result = [];
   
@@ -617,13 +742,22 @@ Do not include any other text, explanations, or formatting. Only the single JSON
   
   for (const line of lines) {
     try {
-      const parsed = JSON.parse(line);
-      if (parsed && (parsed.type === 'stage' || parsed.type === 'dialogue')) {
+      // Apply sanitization before parsing
+      const sanitizedLine = sanitizeJSONResponse(line);
+      const parsed = JSON.parse(sanitizedLine);
+      
+      // Use validation function instead of simple type check
+      if (validateDialogueJSON(parsed)) {
         result.push(parsed);
         foundValidJSON = true;
+        console.log('✅ Valid JSON dialogue parsed:', parsed);
+      } else {
+        console.log('⚠️ Invalid JSON structure, skipping:', parsed);
       }
-    } catch {
-      // Not JSON, continue
+    } catch (parseError) {
+      // Log malformed JSON for debugging but don't crash
+      console.log('⚠️ JSON parse failed for line:', line.substring(0, 100), 'Error:', parseError.message);
+      // Not JSON, continue to next line
     }
   }
   
