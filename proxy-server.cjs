@@ -220,16 +220,25 @@ You have a world-weary demeanor but are loyal and dedicated to solving cases.` :
 ${characterInfo.personality ? `Personality: ${characterInfo.personality.traits?.join(", ")}` : ""}`
 }`;
 
-  // Add character-specific knowledge
+  // Add character-specific knowledge FILTERED BY CONVERSATION PHASE
   if (character === "Marvin Lott") {
+    // Basic identity (always available)
     context += `
-WHAT YOU KNOW:
-- You are the neighbor who called 911 after hearing a scream around 3:30 AM
-- You live next door to Mia Rodriguez, the victim
+BASIC IDENTITY:
+- You are the neighbor who lives next door to Mia Rodriguez
+- You called 911 this morning after hearing something unusual`;
+    
+    // Detailed knowledge only after GREETING phase
+    if (gameState.conversationPhase !== 'GREETING' && gameState.conversationPhase !== 'NONE') {
+      context += `
+
+DETAILED KNOWLEDGE (share when asked specific questions):
+- You heard a scream around 3:30 AM
 - You heard what sounded like furniture moving shortly after the scream
 - You waited about 15 minutes before calling 911 because you weren't sure
 - You sometimes saw Mia with visitors, including a woman who visited frequently and a man who had arguments with her
 - You believe you might have seen someone leaving the building around 3:45 AM`;
+    }
   } else if (character === "Rachel Kim") {
     // Check if this is an interrogation scenario
     const isInterrogation = gameState.currentCharacterType === 'INTERROGATION';
@@ -275,16 +284,24 @@ WRONG RESPONSE EXAMPLES (NEVER SAY THESE):
 ❌ "We should investigate that further"
 ❌ "That's an interesting lead to pursue"`;
     } else {
-      // Regular interview context (neighborhood/crime scene)
+      // Regular interview context (neighborhood/crime scene) - FILTERED BY CONVERSATION PHASE
       context += `
-WHAT YOU KNOW:
-- You are Mia's best friend (and secretly her killer)
+BASIC IDENTITY:
+- You are Mia's best friend and you're devastated by her death
+- You came by this morning to pick her up for breakfast and found her body`;
+      
+      // Detailed knowledge only after GREETING phase
+      if (gameState.conversationPhase !== 'GREETING' && gameState.conversationPhase !== 'NONE') {
+        context += `
+
+DETAILED KNOWLEDGE (your secret guilt and deflection strategy):
+- You are secretly her killer (but they don't know this)
 - You're pretending to be distraught about her death
-- You're claiming you found the body at 8:00 AM when you came to pick her up for breakfast
 - You're trying to deflect suspicion toward Jordan (Mia's ex-boyfriend)
 - You killed Mia because she was rekindling her relationship with Jordan
 - The truth is that you called Mia at 7:25 AM, before you "found" the body
 - You left a bracelet charm at the scene accidentally`;
+      }
     }
   } else if (character === "Jordan Valez") {
     // Check if this is an interrogation scenario
@@ -312,14 +329,22 @@ PERSONALITY IN INTERROGATION:
 
 CRITICAL: You are NOT part of the investigation. You are the suspect being questioned and you're innocent.`;
     } else {
-      // Regular interview context (neighborhood/crime scene)
+      // Regular interview context (neighborhood/crime scene) - FILTERED BY CONVERSATION PHASE
       context += `
-WHAT YOU KNOW:
+BASIC IDENTITY:
 - You are Mia's ex-boyfriend
+- You had some relationship difficulties in the past but were working things out`;
+      
+      // Detailed knowledge only after GREETING phase
+      if (gameState.conversationPhase !== 'GREETING' && gameState.conversationPhase !== 'NONE') {
+        context += `
+
+DETAILED KNOWLEDGE (share when asked specific questions):
 - You had a restraining order against you in the past, but claim it was a misunderstanding
 - You were at The Lockwood Bar until midnight on the night of the murder (verifiable by Uber receipt)
 - You and Mia had recently started talking again, which made Rachel jealous
 - You noticed Rachel was overly involved in your relationship with Mia`;
+      }
     }
   } else if (character === "Dr. Sarah Chen") {
     context += `
@@ -420,7 +445,7 @@ IMPORTANT: Use this history to maintain consistency. Don't repeat information yo
   if (gameState.conversationPhase === 'GREETING' || 
       gameState.conversationPhase === 'NONE' ||
       (!gameState.conversation || gameState.conversation.state === 'INITIAL')) {
-    // First time meeting
+    // First time meeting - CRITICAL BEHAVIOR ENFORCEMENT
     if (character === "Rachel Kim" && gameState.currentCharacterType === 'INTERROGATION') {
       context += `
 IMPORTANT: This is your FIRST time being brought to the police station for questioning. You must start with EXACTLY this opening line:
@@ -435,7 +460,23 @@ IMPORTANT: This is your FIRST time being brought to the police station for quest
 You are defensive and confused about why you've been brought here. You don't know Mia is dead yet and are assuming they think you did something wrong.`;
     } else {
       context += `
-IMPORTANT: This is your FIRST conversation with the detective. React appropriately surprised/concerned about being questioned.`;
+🚨 CRITICAL GREETING PHASE RULES:
+- This is your FIRST conversation with the detective
+- React appropriately surprised/concerned about being questioned
+- Do NOT launch into detailed testimony or analysis
+- Start with basic greeting/reaction to being approached by police
+- Wait for specific questions before sharing detailed information
+- Act like a normal person meeting police for the first time
+
+GREETING EXAMPLES:
+✅ "Oh, hello officer. Is everything alright?"
+✅ "Detective? Is this about what happened to Mia?"
+✅ "I was wondering when someone would come by to ask questions."
+
+WRONG GREETING RESPONSES (DO NOT DO THIS):
+❌ Do not immediately give detailed testimony
+❌ Do not start with specific times, events, or detailed observations
+❌ Do not act like you've been waiting to share everything you know`;
     }
   } 
   else if (gameState.conversationPhase === 'QUESTIONING' && gameState.conversation?.state === 'RETURNING') {

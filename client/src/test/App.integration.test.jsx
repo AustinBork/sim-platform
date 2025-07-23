@@ -59,7 +59,7 @@ describe('App Integration Tests', () => {
       
       // Notepad should be visible initially
       expect(screen.getByTestId('detective-notepad')).toBeInTheDocument()
-      expect(screen.getByText('Detective Notepad')).toBeInTheDocument()
+      expect(screen.getByText(/Detective Notepad/)).toBeInTheDocument()
     })
 
     it('should display mini-map with default location', async () => {
@@ -217,17 +217,15 @@ describe('App Integration Tests', () => {
       const user = userEvent.setup()
       render(<App />)
       
-      // Perform some action
-      const input = screen.getByTestId('message-input')
-      const sendButton = screen.getByTestId('send-button')
-      
-      await user.type(input, 'examine evidence')
-      await user.click(sendButton)
+      // Click the Save Game button to trigger localStorage save
+      const saveButton = screen.getByText('Save Game')
+      await user.click(saveButton)
       
       // Check that localStorage was called
-      await waitFor(() => {
-        expect(localStorage.setItem).toHaveBeenCalled()
-      })
+      expect(localStorage.setItem).toHaveBeenCalledWith(
+        'first48_save',
+        expect.any(String)
+      )
     })
 
     it('should load game state from localStorage', () => {

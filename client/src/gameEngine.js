@@ -209,7 +209,7 @@ export function canAccuse(gameState) {
   if (now < 21 * 60) {
     return { allowed: false, reason: `Must wait until 9 PM on day 1 (current time ${fmt(now)})` };
   }
-  return { allowed: true };
+  return { allowed: true, reason: 'Accusation allowed after 9 PM' };
 }
 
 // ——— Helper: discover evidence ———
@@ -377,7 +377,7 @@ export function applyAction(gameState = {}, actionText = '') {
     newState, 
     timeCost: cost,  // Changed from 'cost' to 'timeCost' for test consistency
     newLeads: unlockedDefs,
-    evidence: discoveredEvidence,  // Changed from 'discoveredEvidence' to 'evidence' for test consistency
+    discoveredEvidence: discoveredEvidence,  // RESTORED: App.jsx expects discoveredEvidence
     messages: [`Action completed: ${actionText}`]  // Added messages array for test consistency
   };
 }

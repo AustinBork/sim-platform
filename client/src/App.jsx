@@ -446,7 +446,7 @@ const currentClock = () => START_OF_DAY + timeElapsed;
   // new state for lead triggers
   const [actionsPerformed, setActionsPerformed]     = useState([]);
   const [interviewsCompleted, setInterviewsCompleted] = useState([]);
-  const [showNotepad, setShowNotepad]         = useState(false);
+  const [showNotepad, setShowNotepad]         = useState(true);
   const [showAccuseModal, setShowAccuseModal] = useState(false);
   const [selectedSuspect, setSelectedSuspect] = useState('');
   const [isProcessingMessage, setIsProcessingMessage] = useState(false); // Prevent infinite loops
@@ -3234,6 +3234,7 @@ const sendMessage = async () => {
   
   const actionText = input; // Define actionText at the start
   setInput(''); // Clear input immediately to prevent race conditions
+  setLoading(true); // Set loading state immediately after validation
   
   // Check for accusations if we're in an interrogation with a suspect
   const interrogationCharacter = conversationState.currentCharacter;
@@ -3328,7 +3329,6 @@ const sendMessage = async () => {
   }
   
   setMsgs(m => [...m, { speaker: detectiveName, content: actionText }]);
-  setLoading(true);
   
   // Step 1: Extract current character and state from conversationState BEFORE any modifications
   const currentCharacter = conversationState.currentCharacter;
@@ -4646,7 +4646,7 @@ if (actionType === 'INVESTIGATIVE') {
         {/* Header */}
         <div style={{ display:'flex', justifyContent:'space-between' }}>
           <div className="timer">
-            <strong>Time:</strong> {fmt(currentClock())} | <strong>Remaining:</strong> {fmt(timeRemaining)}
+            <strong>Current Time:</strong> {fmt(currentClock())} | <strong>Time Remaining:</strong> {fmt(timeRemaining)}
           </div>
           <div>
           <button onClick={saveGame}>Save Game</button>
@@ -4762,8 +4762,8 @@ if (actionType === 'INVESTIGATIVE') {
           placeholder={trialInProgress ? "Trial in progress..." : "Ask Navarro or describe your next move…"}
           disabled={trialInProgress}
         />
-        <button data-testid="send-button" aria-label="Send message" onClick={sendMessage} disabled={trialInProgress}>Send</button>
-        <button data-testid="toggle-notepad" onClick={()=>setShowNotepad(true)}>🗒️ Notepad</button>
+        <button data-testid="send-button" aria-label="send message" onClick={sendMessage} disabled={trialInProgress}>Send</button>
+        <button data-testid="toggle-notepad" onClick={()=>setShowNotepad(!showNotepad)}>🗒️ Notepad</button>
         <button data-testid="evidence-board-button" onClick={()=>setShowEvidenceBoard(true)}>🧵 Theory Board</button>
         
         {/* Time Skip Controls */}

@@ -86,7 +86,7 @@ describe('Game Engine Integration Tests', () => {
       expect(result).toBeDefined()
       expect(result).toHaveProperty('timeCost')
       expect(result).toHaveProperty('messages')
-      expect(result).toHaveProperty('evidence')
+      expect(result).toHaveProperty('discoveredEvidence')
     })
 
     it('should handle evidence collection actions', () => {
@@ -99,7 +99,7 @@ describe('Game Engine Integration Tests', () => {
       const action = 'examine wall'
       const result = applyAction(gameState, action)
       
-      expect(result.evidence).toContain('bloodstain')
+      expect(result.discoveredEvidence).toContain('bloodstain')
       expect(result.timeCost).toBeGreaterThan(0)
       expect(result.messages.length).toBeGreaterThan(0)
     })
@@ -107,16 +107,16 @@ describe('Game Engine Integration Tests', () => {
     it('should handle search actions properly', () => {
       const gameState = {
         currentTime: 480,
-        evidenceCollected: [],
+        evidence: [],
         timeElapsed: 0
       }
       
       const searchAction = 'search apartment'
       const result = applyAction(gameState, searchAction)
       
-      expect(result.evidence.length).toBeGreaterThan(0)
-      expect(result.evidence).toContain('missing-phone')
-      expect(result.evidence).toContain('bracelet-charm')
+      expect(result.discoveredEvidence.length).toBeGreaterThan(0)
+      expect(result.discoveredEvidence).toContain('missing-phone')
+      expect(result.discoveredEvidence).toContain('bracelet-charm')
       expect(result.timeCost).toBeGreaterThan(0)
     })
   })
@@ -124,7 +124,7 @@ describe('Game Engine Integration Tests', () => {
   describe('Accusation System', () => {
     it('should allow accusations after 9 PM', () => {
       const gameState = {
-        currentTime: 21 * 60 + 30, // 9:30 PM
+        timeElapsed: (21 * 60 + 30) - (7 * 60 + 50), // 9:30 PM - 7:50 AM starting time
         interviewsCompleted: ['Rachel Kim', 'Jordan Valez'],
         evidenceCollected: ['bloodstain', 'phone-company-records']
       }
@@ -231,7 +231,7 @@ describe('Game Engine Integration Tests', () => {
       expect(result).toBeDefined()
       expect(result).toHaveProperty('timeCost')
       expect(result).toHaveProperty('messages')
-      expect(result).toHaveProperty('evidence')
+      expect(result).toHaveProperty('discoveredEvidence')
     })
 
     it('should handle edge cases in game state', () => {
@@ -258,19 +258,19 @@ describe('Game Engine Integration Tests', () => {
       
       // Step 1: Search apartment
       let result = applyAction(gameState, 'search apartment')
-      expect(result.evidence).toContain('missing-phone')
-      expect(result.evidence).toContain('bracelet-charm')
+      expect(result.discoveredEvidence).toContain('missing-phone')
+      expect(result.discoveredEvidence).toContain('bracelet-charm')
       
       // Step 2: Collect phone records evidence
-      gameState.evidenceCollected = [...gameState.evidenceCollected, ...result.evidence]
+      gameState.evidenceCollected = [...gameState.evidenceCollected, ...result.discoveredEvidence]
       result = applyAction(gameState, 'pull phone records')
-      expect(result.evidence).toContain('phone-company-records')
+      expect(result.discoveredEvidence).toContain('phone-company-records')
       
       // Step 3: Add interview completion (simulating interview flow)
       gameState.interviewsCompleted = ['Rachel Kim']
       
       // Step 4: Check if accusation is possible after 9 PM
-      gameState.currentTime = 21 * 60 + 30 // 9:30 PM
+      gameState.timeElapsed = (21 * 60 + 30) - (7 * 60 + 50) // 9:30 PM - 7:50 AM starting time
       const accusationResult = canAccuse(gameState)
       expect(accusationResult.allowed).toBe(true)
     })
